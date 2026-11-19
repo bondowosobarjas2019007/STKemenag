@@ -161,7 +161,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
       if (!response.ok || !payload) {
         if (response.status === 413) {
           throw new Error(
-            'Ukuran file PDF terlalu besar untuk dikirim ke server. Silakan kompres PDF terlebih dahulu.'
+            'Ukuran file PDF terlalu besar untuk batas server (maksimal ~4,5 MB di Vercel atau 20 MB di server utama). Silakan kompres PDF terlebih dahulu.'
           );
         }
         if (response.status === 502 || response.status === 503 || response.status === 504) {
