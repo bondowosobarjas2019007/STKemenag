@@ -1,0 +1,95 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
+    --font-body: 'Public Sans', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  body {
+    font-family: var(--font-body);
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
+  }
+
+  .font-mono-tabular {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Official Kemenag Surat Tugas Document Typography (matches Arial/Helvetica PDF output) */
+.surat-a4 {
+  width: 210mm;
+  min-height: 297mm;
+  background: #ffffff;
+  color: #000000;
+  font-family: Arial, Helvetica, 'Liberation Sans', sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.35;
+  padding: 14mm 18mm 14mm 18mm;
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.surat-a4 table {
+  border-collapse: collapse;
+}
+
+/* Print Stylesheet: Only print the exact A4 pages cleanly */
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+
+@media print {
+  html, body {
+    background: #ffffff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 210mm;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only-container {
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #ffffff !important;
+    overflow: visible !important;
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+  }
+
+  .print-scale-reset {
+    transform: none !important;
+    width: 210mm !important;
+    margin: 0 !important;
+  }
+
+  .surat-a4 {
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 !important;
+    width: 210mm !important;
+    height: 297mm !important;
+    min-height: 297mm !important;
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .surat-a4:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+}

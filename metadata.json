@@ -1,0 +1,6 @@
+{
+  "name": "SiTugas Kemenag Jember",
+  "description": "Aplikasi generator Surat Tugas resmi ASN Kementerian Agama Kabupaten Jember dengan deteksi otomatis dasar surat PDF, format Srikandi, cetak PDF A4, dan ekspor Word (.docx).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
