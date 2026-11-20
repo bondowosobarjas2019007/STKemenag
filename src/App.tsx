@@ -26,7 +26,7 @@ import {
   ParsedDasarPdfResult,
 } from './components/DasarPdfUploader';
 import { PegawaiDirectoryModal } from './components/PegawaiDirectoryModal';
-import { PegawaiManager } from './components/PegawaiManager';
+import { DukImportMode, PegawaiManager } from './components/PegawaiManager';
 import { SuratPreview } from './components/SuratPreview';
 import { TrackingSheetsManager } from './components/TrackingSheetsManager';
 import {
@@ -974,6 +974,53 @@ export default function App() {
             onDeletePegawai={(id) => {
               setDirectory((prev) => prev.filter((p) => p.id !== id));
               showToast('Pegawai dihapus dari direktori');
+            }}
+            onBulkUpdateDirectory={(newList: Pegawai[], mode: DukImportMode, fileName: string) => {
+              setDirectory((prev) => {
+                if (mode === 'replace_duk') {
+                  const newNips = new Set(newList.map((n) => n.nip.trim()).filter(Boolean));
+                  // Preserve custom non-DUK manually added entries whose NIP isn't in the new DUK
+                  const customEntries = prev.filter(
+                    (item) => !item.id.startsWith('duk-') && (!item.nip.trim() || !newNips.has(item.nip.trim()))
+                  );
+                  return [...customEntries, ...newList];
+                }
+                // Merge by NIP: update existing matching NIPs, keep old non-matching ones, append new ones
+                const incomingByNip = new Map<string, Pegawai>();
+                const incomingWithoutNip: Pegawai[] = [];
+                for (const item of newList) {
+                  const key = item.nip.trim();
+                  if (key) {
+                    incomingByNip.set(key, item);
+                  } else {
+                    incomingWithoutNip.push(item);
+                  }
+                }
+                const updatedExisting = prev.map((item) => {
+                  const key = item.nip.trim();
+                  if (key && incomingByNip.has(key)) {
+                    const matched = incomingByNip.get(key)!;
+                    incomingByNip.delete(key);
+                    return {
+                      ...item,
+                      nama: matched.nama,
+                      pangkatGolongan: matched.pangkatGolongan || item.pangkatGolongan,
+                      jabatan: matched.jabatan || item.jabatan,
+                    };
+                  }
+                  return item;
+                });
+                return [
+                  ...updatedExisting,
+                  ...Array.from(incomingByNip.values()),
+                  ...incomingWithoutNip,
+                ];
+              });
+              showToast(
+                mode === 'replace_duk'
+                  ? `Database DUK diperbarui dari ${fileName} (${newList.length.toLocaleString('id-ID')} pegawai)`
+                  : `Data DUK digabung dari ${fileName} (${newList.length.toLocaleString('id-ID')} pegawai)`
+              );
             }}
             onUsePegawaiInSurat={handleUsePegawaiFromManager}
           />

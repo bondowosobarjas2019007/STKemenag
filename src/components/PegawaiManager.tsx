@@ -1,12 +1,32 @@
-import React, { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Pencil, Plus, Search, Trash2, UserPlus, X } from 'lucide-react';
+import React, { useMemo, useRef, useState } from 'react';
+import {
+  AlertCircle,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  FileSpreadsheet,
+  Loader2,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
+  Upload,
+  UserPlus,
+  X,
+} from 'lucide-react';
 import { PANGKAT_GOLONGAN_PRESETS, Pegawai } from '../types/surat';
+import { parseDukPdfBuffer, ParseDukPdfResult } from '../utils/parseDukPdf';
+
+export type DukImportMode = 'replace_duk' | 'merge';
 
 interface PegawaiManagerProps {
   directory: Pegawai[];
   onAddPegawai: (pegawai: Omit<Pegawai, 'id'>) => void;
   onUpdatePegawai: (pegawai: Pegawai) => void;
   onDeletePegawai: (id: string) => void;
+  onBulkUpdateDirectory: (newList: Pegawai[], mode: DukImportMode, fileName: string) => void;
   onUsePegawaiInSurat: (pegawai: Pegawai) => void;
 }
 
@@ -21,11 +41,19 @@ const EMPTY_FORM: Omit<Pegawai, 'id'> = {
 
 type UnitFilter = 'semua' | 'kantor' | 'kua' | 'madrasah';
 
+interface PendingDukImport {
+  fileName: string;
+  result: ParseDukPdfResult;
+  newNipCount: number;
+  updatedNipCount: number;
+}
+
 export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
   directory,
   onAddPegawai,
   onUpdatePegawai,
   onDeletePegawai,
+  onBulkUpdateDirectory,
   onUsePegawaiInSurat,
 }) => {
   const [query, setQuery] = useState('');
@@ -34,6 +62,17 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<Omit<Pegawai, 'id'>>(EMPTY_FORM);
+
+  // DUK PDF Upload & Parse states
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isParsingPdf, setIsParsingPdf] = useState(false);
+  const [parseProgress, setParseProgress] = useState<{
+    fileName: string;
+    done: number;
+    total: number;
+  } | null>(null);
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [pendingImport, setPendingImport] = useState<PendingDukImport | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -108,26 +147,303 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
     setForm(EMPTY_FORM);
   };
 
+  const handleTriggerUpload = () => {
+    setParseError(null);
+    fileInputRef.current?.click();
+  };
+
+  const handleDukFileSelected = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    if (
+      file.type !== 'application/pdf' &&
+      !file.name.toLowerCase().endsWith('.pdf')
+    ) {
+      setParseError('File harus berformat PDF (.pdf) hasil ekspor DUK.');
+      return;
+    }
+
+    setIsParsingPdf(true);
+    setParseError(null);
+    setPendingImport(null);
+    setParseProgress({ fileName: file.name, done: 0, total: 0 });
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const result = await parseDukPdfBuffer(buffer, (done, total) => {
+        setParseProgress({ fileName: file.name, done, total });
+      });
+
+      if (result.pegawaiList.length === 0) {
+        setParseError(
+          `Tidak ditemukan baris data pegawai dengan NIP di "${file.name}". Pastikan file merupakan PDF DUK asli (teks digital dari SISDM/spreadsheet), bukan hasil scan gambar.`
+        );
+        return;
+      }
+
+      const existingNips = new Set(
+        directory.map((d) => d.nip.trim()).filter(Boolean)
+      );
+      let newNipCount = 0;
+      let updatedNipCount = 0;
+      for (const p of result.pegawaiList) {
+        const nip = p.nip.trim();
+        if (nip && existingNips.has(nip)) {
+          updatedNipCount++;
+        } else {
+          newNipCount++;
+        }
+      }
+
+      setPendingImport({
+        fileName: file.name,
+        result,
+        newNipCount,
+        updatedNipCount,
+      });
+    } catch (err) {
+      setParseError(
+        err instanceof Error
+          ? `Gagal membaca file PDF DUK: ${err.message}`
+          : 'Gagal memproses file PDF DUK.'
+      );
+    } finally {
+      setIsParsingPdf(false);
+      setParseProgress(null);
+    }
+  };
+
+  const handleApplyImport = (mode: DukImportMode) => {
+    if (!pendingImport) return;
+    onBulkUpdateDirectory(
+      pendingImport.result.pegawaiList,
+      mode,
+      pendingImport.fileName
+    );
+    setPendingImport(null);
+    setPage(1);
+    setQuery('');
+    setUnitFilter('semua');
+  };
+
   return (
     <div className="max-w-6xl mx-auto px-6 py-8">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="application/pdf,.pdf"
+        onChange={handleDukFileSelected}
+        className="hidden"
+      />
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">
             Direktori Pegawai Kemenag Jember
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            Database DUK ASN Kantor Kementerian Agama Kabupaten Jember ({directory.length.toLocaleString('id-ID')} pegawai) untuk pengisian Surat Tugas otomatis dan manual.
+            Database DUK ASN Kantor Kementerian Agama Kabupaten Jember ({directory.length.toLocaleString('id-ID')} pegawai). Unggah file PDF DUK terbaru kapan saja untuk memperbarui data seluruh pegawai secara otomatis.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={openCreate}
-          className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] transition-colors whitespace-nowrap shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          Tambah Pegawai
-        </button>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <a
+            href="/assets/aistudio/DUK_KEMENAG_JEMBER_NOVEMBER_2026_f5e6da92.pdf"
+            download="DUK_KEMENAG_JEMBER_NOVEMBER_2026.pdf"
+            className="inline-flex items-center gap-2 px-3.5 py-2.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
+          >
+            <Download className="w-4 h-4" />
+            Unduh PDF DUK
+          </a>
+          <button
+            type="button"
+            disabled={isParsingPdf}
+            onClick={handleTriggerUpload}
+            className="inline-flex items-center gap-2 px-3.5 py-2.5 text-xs font-semibold text-[#0B5D3B] bg-emerald-50 border border-emerald-300 rounded-lg hover:bg-emerald-100 disabled:opacity-60 disabled:cursor-wait transition-colors whitespace-nowrap shrink-0"
+          >
+            {isParsingPdf ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Upload className="w-4 h-4" />
+            )}
+            Update DUK (PDF)
+          </button>
+          <button
+            type="button"
+            onClick={openCreate}
+            className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] transition-colors whitespace-nowrap shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            Tambah Pegawai
+          </button>
+        </div>
       </div>
+
+      {isParsingPdf && parseProgress && (
+        <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-4 mb-6">
+          <div className="flex items-center justify-between gap-4 mb-2">
+            <div className="flex items-center gap-2.5 text-xs font-semibold text-emerald-900">
+              <Loader2 className="w-4 h-4 animate-spin text-[#0B5D3B] shrink-0" />
+              <span>
+                Membaca PDF DUK: {parseProgress.fileName}
+              </span>
+            </div>
+            <span className="text-xs font-mono-tabular text-emerald-800">
+              {parseProgress.total > 0
+                ? `Halaman ${parseProgress.done} / ${parseProgress.total}`
+                : 'Menyiapkan dokumen...'}
+            </span>
+          </div>
+          <div className="w-full h-1.5 bg-emerald-100 rounded-md overflow-hidden">
+            <div
+              className="h-full bg-[#0B5D3B] transition-all duration-150"
+              style={{
+                width:
+                  parseProgress.total > 0
+                    ? `${Math.round((parseProgress.done / parseProgress.total) * 100)}%`
+                    : '15%',
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {parseError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2.5 text-xs text-red-800">
+            <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-red-900">Gagal Memproses PDF DUK</p>
+              <p className="mt-0.5 leading-relaxed">{parseError}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setParseError(null)}
+            className="p-1 text-red-500 hover:text-red-800 rounded-md shrink-0"
+            aria-label="Tutup pesan error"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {pendingImport && (
+        <div className="bg-white border-2 border-[#0B5D3B]/40 rounded-xl p-5 mb-6 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-4 border-b border-slate-200">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-emerald-50 text-[#0B5D3B] rounded-lg shrink-0">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900">
+                  Preview Pembaruan Data DUK ({pendingImport.result.pegawaiList.length.toLocaleString('id-ID')} Pegawai Terbaca)
+                </h2>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  File <span className="font-medium text-slate-800">{pendingImport.fileName}</span> ({pendingImport.result.totalPages} halaman)
+                  {pendingImport.result.satuanKerja
+                    ? ` · ${pendingImport.result.satuanKerja}`
+                    : ''}
+                </p>
+                <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-slate-700">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 rounded-md font-mono-tabular">
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-slate-500" />
+                    {pendingImport.result.pegawaiList.length.toLocaleString('id-ID')} Total Baris
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-800 rounded-md font-mono-tabular">
+                    +{pendingImport.newNipCount.toLocaleString('id-ID')} NIP Baru
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 text-amber-800 rounded-md font-mono-tabular">
+                    {pendingImport.updatedNipCount.toLocaleString('id-ID')} NIP Sama (Akan Diperbarui)
+                  </span>
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPendingImport(null)}
+              className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md self-end sm:self-start"
+              aria-label="Tutup preview"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="mt-4 overflow-x-auto border border-slate-200 rounded-lg">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
+                  <th className="py-2 px-3 w-12 text-center">No</th>
+                  <th className="py-2 px-3">Nama Pegawai</th>
+                  <th className="py-2 px-3">NIP</th>
+                  <th className="py-2 px-3">Pangkat / Golongan</th>
+                  <th className="py-2 px-3">Jabatan</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {pendingImport.result.pegawaiList.slice(0, 5).map((peg, idx) => (
+                  <tr key={peg.id} className="bg-white">
+                    <td className="py-2 px-3 text-center text-slate-500 font-mono-tabular">
+                      {idx + 1}
+                    </td>
+                    <td className="py-2 px-3 font-medium text-slate-900">
+                      {peg.nama}
+                    </td>
+                    <td className="py-2 px-3 font-mono-tabular text-slate-700 whitespace-nowrap">
+                      {peg.nip}
+                    </td>
+                    <td className="py-2 px-3 text-slate-700 whitespace-nowrap">
+                      {peg.pangkatGolongan}
+                    </td>
+                    <td className="py-2 px-3 text-slate-600 max-w-md truncate">
+                      {peg.jabatan}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {pendingImport.result.pegawaiList.length > 5 && (
+            <p className="text-xs text-slate-500 mt-2">
+              Menampilkan 5 baris pertama dari {pendingImport.result.pegawaiList.length.toLocaleString('id-ID')} pegawai yang siap diterapkan.
+            </p>
+          )}
+
+          <div className="mt-4 pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <p className="text-xs text-slate-600">
+              Pilih metode penerapan: <strong>Perbarui Semua Data DUK</strong> mengganti database DUK dengan file terbaru (pegawai tambahan manual tetap aman), atau <strong>Gabung</strong> untuk memperbarui &amp; menambah tanpa menghapus pegawai lama.
+            </p>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setPendingImport(null)}
+                className="px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyImport('merge')}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-800 bg-slate-100 border border-slate-300 rounded-lg hover:bg-slate-200 whitespace-nowrap shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Gabung / Tambah Saja
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyImport('replace_duk')}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] whitespace-nowrap shrink-0"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Perbarui Semua Data DUK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isFormOpen && (
         <form
