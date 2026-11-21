@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -11,6 +12,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  ShieldAlert,
   Trash2,
   Upload,
   UserPlus,
@@ -74,6 +76,17 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
   const [parseError, setParseError] = useState<string | null>(null);
   const [pendingImport, setPendingImport] = useState<PendingDukImport | null>(null);
 
+  // Confirmation & Warning modal states
+  const [editWarningTarget, setEditWarningTarget] = useState<Pegawai | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    pegawai: Pegawai;
+    step: 1 | 2;
+  } | null>(null);
+  const [dukConfirm, setDukConfirm] = useState<{
+    mode: DukImportMode;
+    step: 1 | 2;
+  } | null>(null);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return directory.filter((p) => {
@@ -123,7 +136,14 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
     setIsFormOpen(true);
   };
 
-  const openEdit = (peg: Pegawai) => {
+  const requestEdit = (peg: Pegawai) => {
+    setEditWarningTarget(peg);
+  };
+
+  const confirmOpenEdit = () => {
+    if (!editWarningTarget) return;
+    const peg = editWarningTarget;
+    setEditWarningTarget(null);
     setEditingId(peg.id);
     setForm({
       nama: peg.nama,
@@ -217,8 +237,15 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
     }
   };
 
-  const handleApplyImport = (mode: DukImportMode) => {
+  const requestApplyImport = (mode: DukImportMode) => {
     if (!pendingImport) return;
+    setDukConfirm({ mode, step: 1 });
+  };
+
+  const confirmApplyImport = () => {
+    if (!pendingImport || !dukConfirm) return;
+    const mode = dukConfirm.mode;
+    setDukConfirm(null);
     onBulkUpdateDirectory(
       pendingImport.result.pegawaiList,
       mode,
@@ -228,6 +255,22 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
     setPage(1);
     setQuery('');
     setUnitFilter('semua');
+  };
+
+  const requestDelete = (peg: Pegawai) => {
+    setDeleteConfirm({ pegawai: peg, step: 1 });
+  };
+
+  const confirmFinalDelete = () => {
+    if (!deleteConfirm) return;
+    const targetId = deleteConfirm.pegawai.id;
+    setDeleteConfirm(null);
+    if (editingId === targetId) {
+      setIsFormOpen(false);
+      setEditingId(null);
+      setForm(EMPTY_FORM);
+    }
+    onDeletePegawai(targetId);
   };
 
   return (
@@ -426,7 +469,7 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => handleApplyImport('merge')}
+                onClick={() => requestApplyImport('merge')}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-800 bg-slate-100 border border-slate-300 rounded-lg hover:bg-slate-200 whitespace-nowrap shrink-0"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -434,7 +477,7 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => handleApplyImport('replace_duk')}
+                onClick={() => requestApplyImport('replace_duk')}
                 className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] whitespace-nowrap shrink-0"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
@@ -452,7 +495,7 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
         >
           <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
             <h2 className="text-sm font-semibold text-slate-900">
-              {editingId ? 'Ubah Data Pegawai' : 'Tambah Pegawai Baru'}
+              {editingId ? 'Ubah Data Pegawai (Manual)' : 'Tambah Pegawai Baru'}
             </h2>
             <button
               type="button"
@@ -463,6 +506,14 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
               <X className="w-4 h-4" />
             </button>
           </div>
+          {editingId && (
+            <div className="mb-4 px-3.5 py-2.5 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2.5 text-xs text-amber-900">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <span>
+                Anda sedang mengubah data pegawai secara manual. Pastikan Nama, NIP, Pangkat/Golongan, dan Jabatan sudah sesuai dokumen resmi sebelum menyimpan.
+              </span>
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1">
@@ -642,7 +693,7 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
                           </button>
                           <button
                             type="button"
-                            onClick={() => openEdit(peg)}
+                            onClick={() => requestEdit(peg)}
                             title="Ubah pegawai"
                             className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-md transition-colors"
                             aria-label={`Ubah ${peg.nama}`}
@@ -651,7 +702,7 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
                           </button>
                           <button
                             type="button"
-                            onClick={() => onDeletePegawai(peg.id)}
+                            onClick={() => requestDelete(peg)}
                             title="Hapus pegawai"
                             className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
                             aria-label={`Hapus ${peg.nama}`}
@@ -700,6 +751,278 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
           </>
         )}
       </div>
+
+      {/* MODAL PERINGATAN SEBELUM EDIT PEGAWAI SECARA MANUAL */}
+      {editWarningTarget && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-[1px] flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xl w-full max-w-md overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-amber-50/70">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-4 h-4" />
+                </div>
+                <h3 className="text-sm font-semibold text-slate-900">
+                  Peringatan Ubah Data Pegawai
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditWarningTarget(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md"
+                aria-label="Tutup peringatan ubah pegawai"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3 text-xs text-slate-700">
+              <p className="leading-relaxed">
+                Anda akan mengubah data pegawai berikut secara manual pada direktori aplikasi:
+              </p>
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1">
+                <div className="font-semibold text-slate-900">{editWarningTarget.nama}</div>
+                <div className="font-mono-tabular text-slate-600">NIP: {editWarningTarget.nip}</div>
+                <div className="text-slate-600">{editWarningTarget.pangkatGolongan}</div>
+                <div className="text-slate-500">{editWarningTarget.jabatan}</div>
+              </div>
+              <p className="text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3 leading-relaxed">
+                Perubahan manual akan langsung dipakai sebagai data pengisian Surat Tugas. Untuk pembaruan massal sesuai SK/SISDM terbaru, gunakan tombol <strong>Update DUK (PDF)</strong>.
+              </p>
+            </div>
+            <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setEditWarningTarget(null)}
+                className="px-4 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={confirmOpenEdit}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-amber-600 rounded-lg hover:bg-amber-700"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                Ya, Lanjut Ubah
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PERINGATAN 2 KALI UNTUK HAPUS PEGAWAI SECARA MANUAL */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 bg-slate-900/55 backdrop-blur-[1px] flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xl w-full max-w-md overflow-hidden">
+            <div
+              className={`px-5 py-4 border-b border-slate-200 flex items-center justify-between ${
+                deleteConfirm.step === 2 ? 'bg-red-50' : 'bg-amber-50/70'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <div
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                    deleteConfirm.step === 2
+                      ? 'bg-red-100 text-red-700'
+                      : 'bg-amber-100 text-amber-700'
+                  }`}
+                >
+                  {deleteConfirm.step === 2 ? (
+                    <ShieldAlert className="w-4 h-4" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4" />
+                  )}
+                </div>
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Peringatan {deleteConfirm.step} dari 2
+                  </div>
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    {deleteConfirm.step === 1
+                      ? 'Hapus Data Pegawai dari Direktori?'
+                      : 'Konfirmasi Akhir: Hapus Permanen?'}
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeleteConfirm(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md"
+                aria-label="Tutup konfirmasi hapus"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3 text-xs text-slate-700">
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1">
+                <div className="font-semibold text-slate-900">
+                  {deleteConfirm.pegawai.nama}
+                </div>
+                <div className="font-mono-tabular text-slate-600">
+                  NIP: {deleteConfirm.pegawai.nip}
+                </div>
+                <div className="text-slate-500">{deleteConfirm.pegawai.jabatan}</div>
+              </div>
+
+              {deleteConfirm.step === 1 ? (
+                <p className="leading-relaxed text-slate-600">
+                  Apakah Anda yakin ingin menghapus pegawai ini? Jika hanya salah klik, silakan tekan <strong>Batal</strong>. Data yang dihapus tidak akan muncul lagi saat memilih pegawai di Editor Surat Tugas.
+                </p>
+              ) : (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-900 leading-relaxed">
+                  <strong>Peringatan Terakhir:</strong> Data pegawai <strong>{deleteConfirm.pegawai.nama}</strong> akan dihapus permanen dari database direktori browser Anda dan tidak dapat dikembalikan secara otomatis kecuali Anda menambahkannya ulang atau mengunggah PDF DUK kembali.
+                </div>
+              )}
+            </div>
+            <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirm(null)}
+                className="px-4 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+              >
+                Batal, Jangan Hapus
+              </button>
+              {deleteConfirm.step === 1 ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setDeleteConfirm({ ...deleteConfirm, step: 2 })
+                  }
+                  className="px-4 py-2 text-xs font-semibold text-white bg-amber-600 rounded-lg hover:bg-amber-700"
+                >
+                  Lanjut ke Peringatan 2/2
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={confirmFinalDelete}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Ya, Hapus Permanen
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PERINGATAN 2 KALI UNTUK UPDATE DATA DUK VIA PDF */}
+      {dukConfirm && pendingImport && (
+        <div className="fixed inset-0 z-50 bg-slate-900/55 backdrop-blur-[1px] flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xl w-full max-w-lg overflow-hidden">
+            <div
+              className={`px-5 py-4 border-b border-slate-200 flex items-center justify-between ${
+                dukConfirm.step === 2 ? 'bg-red-50' : 'bg-amber-50/70'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <div
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                    dukConfirm.step === 2
+                      ? 'bg-red-100 text-red-700'
+                      : 'bg-amber-100 text-amber-700'
+                  }`}
+                >
+                  {dukConfirm.step === 2 ? (
+                    <ShieldAlert className="w-4 h-4" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4" />
+                  )}
+                </div>
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Peringatan {dukConfirm.step} dari 2 · Pembaruan Massal DUK
+                  </div>
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    {dukConfirm.step === 1
+                      ? dukConfirm.mode === 'replace_duk'
+                        ? 'Perbarui Seluruh Data DUK dari PDF?'
+                        : 'Gabungkan Data DUK dari PDF?'
+                      : 'Konfirmasi Akhir: Terapkan Pembaruan DUK?'}
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDukConfirm(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md"
+                aria-label="Tutup peringatan update DUK"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3 text-xs text-slate-700">
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-500">File PDF DUK:</span>
+                  <span className="font-semibold text-slate-900 truncate max-w-[260px]">
+                    {pendingImport.fileName}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-500">Data Saat Ini:</span>
+                  <span className="font-mono-tabular font-medium text-slate-900">
+                    {directory.length.toLocaleString('id-ID')} pegawai
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-500">Data dari PDF Baru:</span>
+                  <span className="font-mono-tabular font-semibold text-[#0B5D3B]">
+                    {pendingImport.result.pegawaiList.length.toLocaleString('id-ID')} pegawai (+{pendingImport.newNipCount.toLocaleString('id-ID')} baru, {pendingImport.updatedNipCount.toLocaleString('id-ID')} diperbarui)
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-500">Metode:</span>
+                  <span className="font-semibold text-slate-900">
+                    {dukConfirm.mode === 'replace_duk'
+                      ? 'Perbarui Semua Data DUK'
+                      : 'Gabung / Tambah Saja'}
+                  </span>
+                </div>
+              </div>
+
+              {dukConfirm.step === 1 ? (
+                <p className="leading-relaxed text-slate-600">
+                  {dukConfirm.mode === 'replace_duk'
+                    ? 'Tindakan ini akan mengganti seluruh database pegawai DUK sebelumnya dengan daftar pegawai dari file PDF baru ini (pegawai yang mutasi keluar/pensiun di file baru akan ikut terhapus dari direktori).'
+                    : 'Tindakan ini akan memperbarui seluruh data pegawai dengan NIP yang cocok dan menambahkan NIP baru secara massal ke database direktori saat ini.'}
+                </p>
+              ) : (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-900 leading-relaxed">
+                  <strong>Peringatan Terakhir:</strong> Setelah dilanjutkan, database pegawai di browser akan langsung diperbarui secara keseluruhan dari <strong>{pendingImport.fileName}</strong>. Pastikan Anda sudah memeriksa preview baris pegawai dan yakin file PDF DUK tersebut adalah versi yang benar.
+                </div>
+              )}
+            </div>
+            <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDukConfirm(null)}
+                className="px-4 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+              >
+                Batal
+              </button>
+              {dukConfirm.step === 1 ? (
+                <button
+                  type="button"
+                  onClick={() => setDukConfirm({ ...dukConfirm, step: 2 })}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-amber-600 rounded-lg hover:bg-amber-700"
+                >
+                  Lanjut ke Peringatan 2/2
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={confirmApplyImport}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E]"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Ya, Terapkan Pembaruan DUK
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -876,24 +876,27 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F4F6F5] text-slate-900">
-      {/* TOP BAR CONTRACT: 3 zones separated by gap-8 */}
-      <header className="no-print sticky top-0 z-30 h-14 bg-white border-b border-slate-200 px-6 flex items-center justify-between gap-8">
+      {/* TOP BAR CONTRACT: 3 zones on desktop, 2-row accessible nav on non-desktop (< lg) */}
+      <header className="no-print sticky top-0 z-30 bg-white border-b border-slate-200 px-3 sm:px-6 py-2 lg:py-0 lg:h-14 flex flex-wrap lg:flex-nowrap items-center justify-between gap-x-4 gap-y-1.5 lg:gap-8">
         <a
           href="#editor"
           onClick={(e) => {
             e.preventDefault();
             setActiveTab('editor');
           }}
-          className="font-display text-base font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0"
+          className="order-1 font-display text-sm sm:text-base font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0"
         >
           SiTugas Kemenag Jember
         </a>
 
-        <nav className="flex items-center gap-6 text-sm font-medium overflow-x-auto">
+        <nav
+          aria-label="Menu utama"
+          className="order-3 lg:order-2 w-full lg:w-auto lg:min-w-0 border-t border-slate-100 lg:border-t-0 pt-1.5 lg:pt-0 flex items-center justify-between sm:justify-start gap-2.5 sm:gap-5 lg:gap-6 text-[11px] sm:text-xs lg:text-sm font-medium overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
           <button
             type="button"
             onClick={() => setActiveTab('editor')}
-            className={`py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
+            className={`py-1.5 lg:py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
               activeTab === 'editor'
                 ? 'text-[#0B5D3B] border-[#0B5D3B]'
                 : 'text-slate-600 border-transparent hover:text-slate-900'
@@ -904,7 +907,7 @@ export default function App() {
           <button
             type="button"
             onClick={() => setActiveTab('pegawai')}
-            className={`py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
+            className={`py-1.5 lg:py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
               activeTab === 'pegawai'
                 ? 'text-[#0B5D3B] border-[#0B5D3B]'
                 : 'text-slate-600 border-transparent hover:text-slate-900'
@@ -915,7 +918,7 @@ export default function App() {
           <button
             type="button"
             onClick={() => setActiveTab('sheets')}
-            className={`py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
+            className={`py-1.5 lg:py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
               activeTab === 'sheets'
                 ? 'text-[#0B5D3B] border-[#0B5D3B]'
                 : 'text-slate-600 border-transparent hover:text-slate-900'
@@ -926,7 +929,7 @@ export default function App() {
           <button
             type="button"
             onClick={() => setActiveTab('arsip')}
-            className={`py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
+            className={`py-1.5 lg:py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
               activeTab === 'arsip'
                 ? 'text-[#0B5D3B] border-[#0B5D3B]'
                 : 'text-slate-600 border-transparent hover:text-slate-900'
@@ -936,11 +939,11 @@ export default function App() {
           </button>
         </nav>
 
-        <div className="flex items-center shrink-0">
+        <div className="order-2 lg:order-3 flex items-center shrink-0">
           <button
             type="button"
             onClick={handlePrintPdf}
-            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] transition-colors whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] transition-colors whitespace-nowrap shrink-0"
           >
             <Printer className="w-3.5 h-3.5" />
             Cetak / PDF
@@ -1742,7 +1745,7 @@ export default function App() {
               </button>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <div className="hidden sm:flex items-center gap-1 p-0.5 bg-slate-100 rounded-md border border-slate-200">
                 {[0.7, 0.85, 1].map((z) => (
                   <button
