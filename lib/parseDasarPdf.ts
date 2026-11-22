@@ -22,6 +22,8 @@ export interface ParsedPegawaiItem {
   sumberDeteksi: 'eksplisit' | 'direktori_jabatan';
 }
 
+export type ExtractionPrecisionMode = 'cepat' | 'teliti';
+
 export interface ParseDasarPdfOutput {
   jenisDokumen: string;
   dasarAsal: string;
@@ -34,6 +36,17 @@ export interface ParseDasarPdfOutput {
   kriteriaDisarankan: 'sendiri' | 'tiga_orang' | 'terlampir';
   catatanDeteksi: string;
   pegawaiTerdeteksi: ParsedPegawaiItem[];
+  modelUsed?: string;
+  extractionSource?: 'text' | 'pdf';
+}
+
+export interface ExtractDasarInput {
+  base64Pdf?: string;
+  textContent?: string;
+  isTextOnly?: boolean;
+  fileName: string;
+  customDirectory?: DirectoryPegawaiInput[];
+  precisionMode?: ExtractionPrecisionMode;
 }
 
 function loadServerDukDirectory(): DirectoryPegawaiInput[] {
@@ -113,22 +126,25 @@ function mergeDirectory(
   return Array.from(byNip.values());
 }
 
-function getLeadershipSummaryForPrompt(
-  directory: DirectoryPegawaiInput[]
-): DirectoryPegawaiInput[] {
-  const leaderPattern =
-    /^(kepala kantor|kepala sub bagian|kepala seksi|penyelenggara|kepala kua|kepala urusan|kepala mtsn|kepala man|kepala min|kasubbag|ketua tim)/i;
-  const leaders = directory.filter(
-    (d) =>
-      leaderPattern.test(d.jabatan.trim()) ||
-      /kepala m(tsn|an|in)\//i.test(d.jabatan) ||
-      /penyelenggara pada penyelenggara/i.test(d.jabatan)
-  );
-  return leaders.slice(0, 65);
+function normalizeJabatanText(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/\bkec\.?\b/g, 'kecamatan')
+    .replace(/\bkab\.?\b/g, 'kabupaten')
+    .replace(/\bkasubbag\b/g, 'kepala sub bagian')
+    .replace(/\bkasi\b/g, 'kepala seksi')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+interface RawGeminiPegawaiItem {
+  nama: string;
+  nip: string;
 }
 
 function enrichWithDirectory(
-  detected: ParsedPegawaiItem[],
+  detected: RawGeminiPegawaiItem[],
   directory: DirectoryPegawaiInput[]
 ): ParsedPegawaiItem[] {
   const cleanNip = (s: string) => s.replace(/\D/g, '');
@@ -139,20 +155,6 @@ function enrichWithDirectory(
       .replace(/\s+/g, ' ')
       .trim();
 
-  const isPlaceholderValue = (val?: string) => {
-    const cleaned = (val || '').trim().toLowerCase();
-    return (
-      !cleaned ||
-      cleaned === '-' ||
-      cleaned === '--' ||
-      cleaned === 'n/a' ||
-      cleaned === 'none' ||
-      cleaned.includes('tidak tercantum') ||
-      cleaned.includes('tidak ada') ||
-      cleaned.includes('tidak diketahui')
-    );
-  };
-
   return detected.map((item) => {
     const itemNip = cleanNip(item.nip || '');
     const itemName = norm(item.nama || '');
@@ -160,6 +162,8 @@ function enrichWithDirectory(
     const itemCompact = itemCore.replace(/\s+/g, '');
 
     let match: DirectoryPegawaiInput | undefined;
+    let sumberDeteksi: 'eksplisit' | 'direktori_jabatan' = 'eksplisit';
+
     if (itemNip.length >= 8) {
       match = directory.find((d) => cleanNip(d.nip) === itemNip);
     }
@@ -195,117 +199,99 @@ function enrichWithDirectory(
         match = partialHits[0];
       }
     }
+    // Local jabatan fallback when invitation only mentions an official position (e.g. "Kepala KUA Kecamatan Ambulu")
+    if (!match && itemNip.length < 8 && itemName.length >= 6) {
+      const normItemJab = normalizeJabatanText(item.nama || '');
+      const jabHits = directory.filter((d) => {
+        const normDirJab = normalizeJabatanText(d.jabatan || '');
+        if (!normDirJab) return false;
+        return (
+          normDirJab === normItemJab ||
+          (normItemJab.length >= 10 && normDirJab.includes(normItemJab))
+        );
+      });
+      if (jabHits.length === 1) {
+        match = jabHits[0];
+        sumberDeteksi = 'direktori_jabatan';
+      }
+    }
 
     if (match) {
       return {
         nama: match.nama,
         nip: match.nip,
-        pangkatGolongan: !isPlaceholderValue(item.pangkatGolongan)
-          ? item.pangkatGolongan.trim()
-          : match.pangkatGolongan,
-        jabatan: match.jabatan || item.jabatan,
-        sumberDeteksi: item.sumberDeteksi || 'eksplisit',
+        pangkatGolongan: match.pangkatGolongan || '',
+        jabatan: match.jabatan || '',
+        sumberDeteksi,
       };
     }
 
     return {
       nama: item.nama?.trim() || '',
       nip: cleanNip(item.nip || '') || item.nip?.trim() || '',
-      pangkatGolongan: isPlaceholderValue(item.pangkatGolongan)
-        ? ''
-        : item.pangkatGolongan.trim(),
-      jabatan: item.jabatan?.trim() || '',
-      sumberDeteksi: item.sumberDeteksi || 'eksplisit',
+      pangkatGolongan: '',
+      jabatan: '',
+      sumberDeteksi: 'eksplisit',
     };
   });
 }
 
-export async function extractDasarFromPdfBase64(
-  cleanBase64: string,
-  fileName: string,
-  customDirectory: DirectoryPegawaiInput[] = []
+const COMPACT_SYSTEM_INSTRUCTION = `Anda asisten persuratan Kantor Kementerian Agama Kabupaten Jember. Ekstrak metadata surat dasar dan daftar pegawai Kemenag Kab. Jember secara ringkas ke JSON.
+Aturan ringkas:
+1. dasarAsal: Cek semua TTD/TTE & kop surat. Jika lebih dari 1 TTD/TTE, pilih jabatan TERTINGGI (Kepala > Kepala Seksi/Penyelenggara > Ketua Tim/Panitia) lalu lengkapi dengan nama instansi dari kop surat (mis. "Surat dari Kepala MTsN 7 Jember", "Nota Dinas dari Kepala Seksi Bimas Islam").
+2. tanggalMulai & tanggalSelesai: Format YYYY-MM-DD (samakan jika 1 hari). dasarTanggal juga YYYY-MM-DD.
+3. namaKegiatan: Frasa inti kegiatan untuk kalimat "dalam rangka menghadiri [namaKegiatan]".
+4. pegawaiTerdeteksi: Periksa seluruh halaman & lampiran. Ambil HANYA ASN/pegawai Kemenag Kab. Jember yang ditugaskan (saring peserta luar Kab. Jember, abaikan pengundang eksternal kecuali ikut ditugaskan). Isi cukup { nama, nip } — JANGAN tulis pangkat/jabatan panjang (sistem mencocokkan NIP/nama ke DUK lokal). Jika surat hanya menyebut jabatan spesifik tanpa nama (mis. "Penyelenggara Katolik"), tulis nama jabatan itu di field nama dengan nip "". Jika hanya tertulis "tim terkait" tanpa nama/jabatan spesifik, kembalikan [].
+5. kriteriaDisarankan: "sendiri" (1 orang), "tiga_orang" (2-3 orang), "terlampir" (>=4 orang).
+6. catatanDeteksi: 1 kalimat ringkas asal penandatangan tertinggi & jumlah pegawai terdeteksi.`;
+
+export async function extractDasarFromInput(
+  input: ExtractDasarInput
 ): Promise<ParseDasarPdfOutput> {
-  const fullDirectory = mergeDirectory(customDirectory);
-  const promptDirectory = [
-    ...customDirectory.slice(0, 20),
-    ...getLeadershipSummaryForPrompt(fullDirectory),
-  ];
-
+  const fullDirectory = mergeDirectory(input.customDirectory || []);
   const ai = getAiClient();
+  const useTextOnly = Boolean(input.isTextOnly && input.textContent?.trim());
+  const precisionMode: ExtractionPrecisionMode =
+    input.precisionMode === 'teliti' ? 'teliti' : 'cepat';
 
-  const directorySummary = promptDirectory
-    .map(
-      (d, i) =>
-        `${i + 1}. Nama: "${d.nama}" | NIP: "${d.nip}" | Pangkat/Gol: "${d.pangkatGolongan}" | Jabatan: "${d.jabatan}"`
-    )
-    .join('\n');
+  const userPrompt = useTextOnly
+    ? `Ekstrak data dari teks digital PDF "${input.fileName || 'dasar_surat.pdf'}" berikut:\n\n${input.textContent!.trim()}`
+    : `Ekstrak data dari dokumen PDF "${input.fileName || 'dasar_surat.pdf'}" terlampir (periksa seluruh halaman termasuk lampiran).`;
 
-  const prompt = `Anda adalah asisten administrasi persuratan resmi Kantor Kementerian Agama Kabupaten Jember.
-Analisis SELURUH HALAMAN dokumen PDF terlampir (nama file: "${fileName || 'dasar_surat.pdf'}") mulai dari halaman 1 sampai halaman terakhir (termasuk seluruh halaman LAMPIRAN).
+  const parts = useTextOnly
+    ? [{ text: userPrompt }]
+    : [
+        {
+          inlineData: {
+            mimeType: 'application/pdf',
+            data: input.base64Pdf || '',
+          },
+        },
+        { text: userPrompt },
+      ];
 
-Ekstrak informasi berikut ke dalam JSON terstruktur secara akurat:
+  const modelsToTry =
+    precisionMode === 'teliti'
+      ? [
+          { model: 'gemini-4-hydrogen', thinkingLevel: ThinkingLevel.LOW, timeout: 45000 },
+          { model: 'gemini-3.1-flash-lite', thinkingLevel: ThinkingLevel.MINIMAL, timeout: 30000 },
+        ]
+      : [
+          { model: 'gemini-3.1-flash-lite', thinkingLevel: ThinkingLevel.MINIMAL, timeout: 25000 },
+          { model: 'gemini-4-hydrogen', thinkingLevel: ThinkingLevel.LOW, timeout: 45000 },
+        ];
 
-1. jenisDokumen: "nota_dinas" | "undangan" | "permohonan" | "lainnya"
-2. dasarAsal: Penyebutan asal/sumber dasar surat untuk kolom "Dasar :" pada Surat Tugas Kemenag Jember.
-   ATURAN WAJIB MENENTUKAN dasarAsal (TTD/TTE + KOP SURAT):
-   - Periksa SEMUA blok tanda tangan / TTE (Tanda Tangan Elektronik) di seluruh dokumen (kanan, kiri, tengah, bawah, atau bagian "Mengetahui" / "Menyetujui").
-   - BILA ADA LEBIH DARI SATU TTD / TTE pada dasar surat, WAJIB pilih pejabat dengan JABATAN PALING TINGGI / yang berwenang memerintah atau mengesahkan surat tersebut (biasanya "Kepala").
-     * Contoh penting: jika ada TTD/TTE "Ketua" (misal Ketua Tim ZI / Ketua Panitia / Ketua Pokja) DAN TTD/TTE "Kepala" (misal Kepala Madrasah / Kepala Kantor / Kepala Dinas / Kepala Balai / Kepala Seksi), maka gunakan jabatan yang paling tinggi yaitu Kepala-nya!
-     * Urutan prioritas jabatan tertinggi: Menteri / Dirjen / Kakanwil / Kepala Kantor / Kepala Dinas / Kepala Balai / Kepala Madrasah / Rektor / Bupati / Camat -> Kepala Bagian / Kepala Bidang / Kepala Seksi / Penyelenggara -> Ketua Tim / Ketua Panitia -> Sekretaris / Koordinator.
-   - Cocokkan dan lengkapi jabatan penandatangan tertinggi tersebut dengan NAMA INSTANSI LENGKAP pada kop surat di bagian atas dokumen (misalnya di TTE hanya tertulis "Kepala", sedangkan di kop surat tertulis "Madrasah Tsanawiyah Negeri 7 Jember" -> hasilkan "Surat dari Kepala Madrasah Tsanawiyah Negeri 7 Jember").
-   - Jika ditandatangani 'a.n.' / 'Plt.' / 'Plh.', tentukan pejabat pengirim sesuai struktur TTD/TTE tertinggi dan instansi pada kop surat.
-   Contoh format resmi Kemenag Jember:
-   - Nota Dinas ditandatangani Kepala Seksi Bimas Islam: "Nota Dinas dari Kepala Seksi Bimas Islam"
-   - Surat Undangan dari lembaga non-pemerintah/Paroki: 'Surat dari Gereja Katolik Paroki "Santo Paulus" Ambulu'
-   - Surat Permohonan ada TTD Ketua Tim ZI dan Kepala MTsN 7 Jember: "Surat dari Kepala Madrasah Tsanawiyah Negeri 7 Jember"
-   - Surat dari Kanwil Kemenag Jatim: "Surat dari Kepala Kantor Wilayah Kementerian Agama Provinsi Jawa Timur"
-3. dasarNomor: Nomor surat pada dokumen dasar (apa adanya, misal "224/Kk.13.32.06./KP/11/2026").
-4. dasarTanggal: Tanggal surat dasar dalam format ISO YYYY-MM-DD.
-5. namaKegiatan: Frasa nama/perihal kegiatan untuk mengisi "Menimbang: Bahwa dalam rangka menghadiri [namaKegiatan]..." dan "Untuk: 1. Menghadiri [namaKegiatan]...".
-   Contoh: "kegiatan Koordinasi dan Sharing Program Bimbingan Masyarakat Islam", "Kegiatan Pertemuan Tahunan Keuskupan Malang Ke-51 Tahun 2026", "kegiatan Pendampingan PMPZI Tahun 2026".
-6. lokasiTujuan: Tempat/lokasi pelaksanaan kegiatan secara jelas (contoh: "Kantor Kementerian Agama Kabupaten Lumajang", "Rumah Retret St. Julie Billiart", "Ruang Laboratorium IPA MTsN 7 Jember").
-7. tanggalMulai: Tanggal mulai pelaksanaan kegiatan (YYYY-MM-DD).
-8. tanggalSelesai: Tanggal selesai pelaksanaan kegiatan (YYYY-MM-DD). Jika kegiatan hanya 1 hari, samakan dengan tanggalMulai.
-9. pegawaiTerdeteksi: Daftar SELURUH ASN/PNS Kantor Kementerian Agama Kabupaten Jember yang dipanggil / ditugaskan berangkat berdasarkan isi surat MAUPUN HALAMAN LAMPIRAN!
-   ATURAN SANGAT PENTING UNTUK pegawaiTerdeteksi:
-   - WAJIB CEK HALAMAN LAMPIRAN (halaman 2, 3, dst.)! Jangan hanya membaca halaman pertama! Jika halaman pertama menyebut "daftar terlampir", "sebagaimana terlampir", atau "peserta terlampir", ekstrak semua nama/NIP/jabatan ASN Kemenag Jember dari tabel/daftar pada halaman lampiran tersebut.
-   - Jika lampiran berisi daftar peserta dari berbagai kabupaten/kota atau berbagai instansi (misal se-Jawa Timur), SARING dan ambil HANYA peserta/ASN/jabatan dari wilayah/instansi Kantor Kementerian Agama Kabupaten Jember (termasuk KUA/Madrasah Negeri Kab. Jember); abaikan peserta dari daerah lain.
-   - JANGAN masukkan nama penandatangan/pengirim surat dari pihak pengundang atau pemohon eksternal (misal Pastor Paroki pengundang, atau Kepala Madrasah/Ketua Tim pemohon pendampingan) kecuali mereka sendiri memang termasuk daftar peserta Kemenag Jember yang ditugaskan berangkat.
-   - Ekstrak Nama, NIP (18 digit bersih tanpa spasi jika ada), Pangkat/Golongan (kosongkan "" jika tidak tertulis), dan Jabatan. Jangan mengulang pegawai yang sama jika muncul di halaman 1 dan lampiran.
-   - Jika surat mengundang JABATAN tertentu tanpa nama (misal: "mengundang Penyelenggara Katolik" atau "Kepala KUA Kec. ..."), cocokkan dengan daftar Pejabat Struktural Kemenag Jember di bawah ini dan isi sumberDeteksi = "direktori_jabatan".
-   - Jika surat hanya meminta "tim/pejabat terkait" tanpa menyebut nama maupun jabatan spesifik yang cocok, kembalikan array kosong [].
-10. kriteriaDisarankan: Kriteria keberangkatan yang paling sesuai ("sendiri" | "tiga_orang" | "terlampir"):
-   - "sendiri": jika tepat 1 pegawai yang berangkat / diminta surat.
-   - "tiga_orang": jika 2 atau 3 pegawai yang berangkat / diminta surat.
-   - "terlampir": jika 4 atau lebih pegawai yang berangkat / diminta surat.
-11. catatanDeteksi: Ringkasan singkat 1-2 kalimat dalam bahasa Indonesia tentang asal penandatangan tertinggi (kop & TTD/TTE), jumlah ASN yang terdeteksi (termasuk jika ditemukan di halaman lampiran), atau alasan bila perlu memilih tim manual.
-
-Daftar Pejabat Struktural / Unit Kemenag Jember untuk pencocokan jabatan (seluruh 1.372 pegawai DUK juga dicocokkan otomatis di server):
-${directorySummary || '(Direktori kosong)'}`;
-
-  const modelsToTry = [
-    { model: 'gemini-4-hydrogen', thinkingLevel: ThinkingLevel.LOW, timeout: 25000 },
-    { model: 'gemini-3.1-flash-lite', thinkingLevel: ThinkingLevel.MINIMAL, timeout: 45000 },
-  ];
   let responseText: string | undefined;
+  let usedModel = modelsToTry[0].model;
 
   for (let attempt = 1; attempt <= modelsToTry.length; attempt++) {
     const { model, thinkingLevel, timeout } = modelsToTry[attempt - 1];
     try {
       const response = await ai.models.generateContent({
         model,
-        contents: {
-          parts: [
-            {
-              inlineData: {
-                mimeType: 'application/pdf',
-                data: cleanBase64,
-              },
-            },
-            { text: prompt },
-          ],
-        },
+        contents: { parts },
         config: {
+          systemInstruction: COMPACT_SYSTEM_INSTRUCTION,
           httpOptions: { timeout },
           thinkingConfig: { thinkingLevel },
           responseMimeType: 'application/json',
@@ -329,17 +315,8 @@ ${directorySummary || '(Direktori kosong)'}`;
                   properties: {
                     nama: { type: Type.STRING },
                     nip: { type: Type.STRING },
-                    pangkatGolongan: { type: Type.STRING },
-                    jabatan: { type: Type.STRING },
-                    sumberDeteksi: { type: Type.STRING },
                   },
-                  required: [
-                    'nama',
-                    'nip',
-                    'pangkatGolongan',
-                    'jabatan',
-                    'sumberDeteksi',
-                  ],
+                  required: ['nama', 'nip'],
                 },
               },
             },
@@ -360,6 +337,7 @@ ${directorySummary || '(Direktori kosong)'}`;
         },
       });
       responseText = (response.text ?? '{}').trim();
+      usedModel = model;
       break;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -378,7 +356,7 @@ ${directorySummary || '(Direktori kosong)'}`;
       if (!isTransient || attempt === modelsToTry.length) {
         throw err;
       }
-      await new Promise((r) => setTimeout(r, 600 * attempt));
+      await new Promise((r) => setTimeout(r, 500 * attempt));
     }
   }
 
@@ -394,7 +372,7 @@ ${directorySummary || '(Direktori kosong)'}`;
     tanggalSelesai: string;
     kriteriaDisarankan?: string;
     catatanDeteksi: string;
-    pegawaiTerdeteksi: ParsedPegawaiItem[];
+    pegawaiTerdeteksi: RawGeminiPegawaiItem[];
   };
 
   const rawEnriched = enrichWithDirectory(
@@ -432,7 +410,23 @@ ${directorySummary || '(Direktori kosong)'}`;
     ...parsed,
     kriteriaDisarankan,
     pegawaiTerdeteksi: enrichedPegawai,
+    modelUsed: usedModel,
+    extractionSource: useTextOnly ? 'text' : 'pdf',
   };
+}
+
+export async function extractDasarFromPdfBase64(
+  cleanBase64: string,
+  fileName: string,
+  customDirectory: DirectoryPegawaiInput[] = [],
+  precisionMode: ExtractionPrecisionMode = 'cepat'
+): Promise<ParseDasarPdfOutput> {
+  return extractDasarFromInput({
+    base64Pdf: cleanBase64,
+    fileName,
+    customDirectory,
+    precisionMode,
+  });
 }
 
 export function mapGeminiErrorToFriendlyMessage(err: unknown): string {

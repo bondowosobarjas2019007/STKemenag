@@ -1,8 +1,9 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import {
-  extractDasarFromPdfBase64,
+  extractDasarFromInput,
   mapGeminiErrorToFriendlyMessage,
   type DirectoryPegawaiInput,
+  type ExtractionPrecisionMode,
 } from '../lib/parseDasarPdf.ts';
 
 export const config = {
@@ -49,8 +50,11 @@ export default async function handler(
   try {
     const contentType = String(req.headers['content-type'] || '').toLowerCase();
     let cleanBase64 = '';
+    let textContent = '';
+    let isTextOnly = false;
     let fileName = 'dasar_surat.pdf';
     let customDirectory: DirectoryPegawaiInput[] = [];
+    let precisionMode: ExtractionPrecisionMode = 'cepat';
 
     let rawBuffer: Buffer | null = null;
     let parsedObj: Record<string, unknown> | null = null;
@@ -104,6 +108,11 @@ export default async function handler(
           customDirectory = [];
         }
       }
+      const rawPrecision = req.headers['x-precision-mode'];
+      const precisionStr = Array.isArray(rawPrecision) ? rawPrecision[0] : rawPrecision;
+      if (precisionStr === 'teliti') {
+        precisionMode = 'teliti';
+      }
     } else {
       if (!parsedObj && rawBuffer && rawBuffer.length > 0) {
         try {
@@ -117,32 +126,48 @@ export default async function handler(
         }
       }
       const bodyObj = parsedObj || {};
-      const rawBase64 =
-        typeof bodyObj.fileBase64 === 'string'
-          ? bodyObj.fileBase64
-          : typeof bodyObj.docB64 === 'string'
-            ? bodyObj.docB64
-            : '';
-      if (!rawBase64) {
-        sendJson(res, 400, { error: 'File PDF tidak valid atau kosong.' });
-        return;
-      }
-      cleanBase64 = rawBase64
-        .replace(/^data:application\/pdf;base64,/, '')
-        .trim();
       if (typeof bodyObj.fileName === 'string' && bodyObj.fileName) {
         fileName = bodyObj.fileName;
       }
       if (Array.isArray(bodyObj.directory)) {
         customDirectory = bodyObj.directory as DirectoryPegawaiInput[];
       }
+      if (bodyObj.precisionMode === 'teliti') {
+        precisionMode = 'teliti';
+      }
+
+      if (bodyObj.isTextOnly === true && typeof bodyObj.textContent === 'string') {
+        isTextOnly = true;
+        textContent = bodyObj.textContent.trim();
+        if (!textContent) {
+          sendJson(res, 400, { error: 'Konten teks PDF kosong.' });
+          return;
+        }
+      } else {
+        const rawBase64 =
+          typeof bodyObj.fileBase64 === 'string'
+            ? bodyObj.fileBase64
+            : typeof bodyObj.docB64 === 'string'
+              ? bodyObj.docB64
+              : '';
+        if (!rawBase64) {
+          sendJson(res, 400, { error: 'File PDF tidak valid atau kosong.' });
+          return;
+        }
+        cleanBase64 = rawBase64
+          .replace(/^data:application\/pdf;base64,/, '')
+          .trim();
+      }
     }
 
-    const result = await extractDasarFromPdfBase64(
-      cleanBase64,
+    const result = await extractDasarFromInput({
+      base64Pdf: cleanBase64 || undefined,
+      textContent: textContent || undefined,
+      isTextOnly,
       fileName,
-      customDirectory
-    );
+      customDirectory,
+      precisionMode,
+    });
     sendJson(res, 200, result);
   } catch (err) {
     console.error('Error Vercel /api/parse-dasar-pdf:', err);

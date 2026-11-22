@@ -3,9 +3,10 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import {
-  extractDasarFromPdfBase64,
+  extractDasarFromInput,
   mapGeminiErrorToFriendlyMessage,
   type DirectoryPegawaiInput,
+  type ExtractionPrecisionMode,
 } from './lib/parseDasarPdf.ts';
 import {
   handleRelayGet,
@@ -49,8 +50,11 @@ async function createServer() {
   ) => {
     try {
       let cleanBase64 = '';
+      let textContent = '';
+      let isTextOnly = false;
       let fileName = 'dasar_surat.pdf';
       let customDirectory: DirectoryPegawaiInput[] = [];
+      let precisionMode: ExtractionPrecisionMode = 'cepat';
 
       if (Buffer.isBuffer(req.body)) {
         if (req.body.length === 0) {
@@ -75,6 +79,9 @@ async function createServer() {
             customDirectory = [];
           }
         }
+        if (req.header('x-precision-mode') === 'teliti') {
+          precisionMode = 'teliti';
+        }
       } else {
         let parsedBody: Record<string, unknown> = {};
         if (typeof req.body === 'string') {
@@ -87,32 +94,48 @@ async function createServer() {
         } else if (req.body && typeof req.body === 'object') {
           parsedBody = req.body as Record<string, unknown>;
         }
-        const rawBase64 =
-          typeof parsedBody.fileBase64 === 'string'
-            ? parsedBody.fileBase64
-            : typeof parsedBody.docB64 === 'string'
-              ? parsedBody.docB64
-              : '';
-        if (!rawBase64) {
-          res.status(400).json({ error: 'File PDF tidak valid atau kosong.' });
-          return;
-        }
-        cleanBase64 = rawBase64
-          .replace(/^data:application\/pdf;base64,/, '')
-          .trim();
         if (typeof parsedBody.fileName === 'string' && parsedBody.fileName) {
           fileName = parsedBody.fileName;
         }
         if (Array.isArray(parsedBody.directory)) {
           customDirectory = parsedBody.directory as DirectoryPegawaiInput[];
         }
+        if (parsedBody.precisionMode === 'teliti') {
+          precisionMode = 'teliti';
+        }
+
+        if (parsedBody.isTextOnly === true && typeof parsedBody.textContent === 'string') {
+          isTextOnly = true;
+          textContent = parsedBody.textContent.trim();
+          if (!textContent) {
+            res.status(400).json({ error: 'Konten teks PDF kosong.' });
+            return;
+          }
+        } else {
+          const rawBase64 =
+            typeof parsedBody.fileBase64 === 'string'
+              ? parsedBody.fileBase64
+              : typeof parsedBody.docB64 === 'string'
+                ? parsedBody.docB64
+                : '';
+          if (!rawBase64) {
+            res.status(400).json({ error: 'File PDF tidak valid atau kosong.' });
+            return;
+          }
+          cleanBase64 = rawBase64
+            .replace(/^data:application\/pdf;base64,/, '')
+            .trim();
+        }
       }
 
-      const result = await extractDasarFromPdfBase64(
-        cleanBase64,
+      const result = await extractDasarFromInput({
+        base64Pdf: cleanBase64 || undefined,
+        textContent: textContent || undefined,
+        isTextOnly,
         fileName,
-        customDirectory
-      );
+        customDirectory,
+        precisionMode,
+      });
       res.json(result);
     } catch (err) {
       console.error('Error /api/parse-dasar-pdf:', err);
