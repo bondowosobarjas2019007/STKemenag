@@ -1,5 +1,11 @@
 import { KriteriaKeberangkatan, SuratTugasData } from '../types/surat';
 
+export const OWNER_GOOGLE_EMAIL = 'bondowosobarjas2019.007@gmail.com';
+
+export function isOwnerAccount(email?: string | null): boolean {
+  return (email || '').trim().toLowerCase() === OWNER_GOOGLE_EMAIL.toLowerCase();
+}
+
 export const TRACKING_SPREADSHEET_TITLE =
   'Database Tracking Surat Tugas - Kemenag Jember';
 
@@ -472,4 +478,345 @@ export async function updateExistingSuratRow(
       }),
     }
   );
+}
+
+/**
+ * Mengunci Google Spreadsheet agar:
+ * 1. Link dapat diakses orang lain sebagai VIEWER (Hanya Lihat), tidak dapat mengedit.
+ * 2. Setiap tab sheet diproteksi (addProtectedRange) agar hanya akun pemilik
+ *    (bondowosobarjas2019.007@gmail.com) dan skrip resmi aplikasi yang bisa mengubah isi sel.
+ */
+export async function setSpreadsheetViewOnlyAndProtected(
+  spreadsheetId: string,
+  accessToken: string
+): Promise<{
+  protectedTabsCount: number;
+  anyoneViewerSet: boolean;
+}> {
+  // 1. Check existing Drive permissions
+  const permsRes = await googleFetch(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+      spreadsheetId
+    )}/permissions?fields=permissions(id,type,role,emailAddress)`,
+    accessToken
+  );
+
+  const permissions: Array<{
+    id: string;
+    type: string;
+    role: string;
+    emailAddress?: string;
+  }> = Array.isArray(permsRes?.permissions) ? permsRes.permissions : [];
+
+  let anyoneViewerSet = false;
+  const anyonePerm = permissions.find((p) => p.type === 'anyone');
+
+  if (anyonePerm) {
+    if (anyonePerm.role !== 'reader') {
+      await googleFetch(
+        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+          spreadsheetId
+        )}/permissions/${encodeURIComponent(anyonePerm.id)}`,
+        accessToken,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ role: 'reader' }),
+        }
+      );
+    }
+    anyoneViewerSet = true;
+  } else {
+    await googleFetch(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+        spreadsheetId
+      )}/permissions`,
+      accessToken,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          role: 'reader',
+          type: 'anyone',
+        }),
+      }
+    );
+    anyoneViewerSet = true;
+  }
+
+  // Downgrade any non-owner writer permissions to reader
+  for (const perm of permissions) {
+    if (
+      perm.type === 'user' &&
+      perm.role !== 'owner' &&
+      perm.role !== 'reader' &&
+      perm.emailAddress?.toLowerCase() !== OWNER_GOOGLE_EMAIL.toLowerCase()
+    ) {
+      await googleFetch(
+        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+          spreadsheetId
+        )}/permissions/${encodeURIComponent(perm.id)}`,
+        accessToken,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ role: 'reader' }),
+        }
+      );
+    }
+  }
+
+  // 2. Protect sheet tabs inside Google Sheets against manual edits by non-owners
+  const meta = await googleFetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(
+      spreadsheetId
+    )}?fields=sheets(properties(sheetId,title),protectedRanges(protectedRangeId,range))`,
+    accessToken
+  );
+
+  const requests: Record<string, unknown>[] = [];
+  for (const sheet of meta?.sheets || []) {
+    const sheetId = sheet?.properties?.sheetId;
+    if (typeof sheetId !== 'number') continue;
+    const alreadyProtected = Array.isArray(sheet.protectedRanges)
+      ? sheet.protectedRanges.some(
+          (pr: any) =>
+            pr?.range?.sheetId === sheetId &&
+            pr?.range?.startRowIndex === undefined &&
+            pr?.range?.startColumnIndex === undefined
+        )
+      : false;
+    if (!alreadyProtected) {
+      requests.push({
+        addProtectedRange: {
+          protectedRange: {
+            range: { sheetId },
+            description:
+              'Terkunci: hanya dapat diubah melalui aplikasi SiTugas Kemenag Jember',
+            warningOnly: false,
+            editors: {
+              users: [OWNER_GOOGLE_EMAIL],
+            },
+          },
+        },
+      });
+    }
+  }
+
+  if (requests.length > 0) {
+    await googleFetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(
+        spreadsheetId
+      )}:batchUpdate`,
+      accessToken,
+      {
+        method: 'POST',
+        body: JSON.stringify({ requests }),
+      }
+    );
+  }
+
+  return {
+    protectedTabsCount: requests.length,
+    anyoneViewerSet,
+  };
+}
+
+// =========================================================================
+// APPS SCRIPT SERVER RELAY CLIENT (for centralized owner spreadsheet access)
+// =========================================================================
+
+export interface BridgeStatusResponse {
+  ok: boolean;
+  bridgeConfigured: boolean;
+  serverConfigured: boolean;
+  ownerEmail: string;
+  spreadsheetUrl?: string;
+}
+
+export interface BridgeUpsertResponse {
+  ok: boolean;
+  needsOverwriteConfirm?: boolean;
+  existingRowNumber?: number;
+  savedRowNumber?: number;
+  createdNew?: boolean;
+  updatedExisting?: boolean;
+  spreadsheetId?: string;
+  title?: string;
+  spreadsheetUrl?: string;
+  sheets?: SheetTabInfo[];
+  error?: string;
+}
+
+function buildBridgeHeaders(customWebhookUrl?: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (customWebhookUrl && customWebhookUrl.trim()) {
+    headers['x-apps-script-url'] = customWebhookUrl.trim();
+  }
+  return headers;
+}
+
+export async function fetchSheetsBridgeStatus(
+  customWebhookUrl?: string
+): Promise<BridgeStatusResponse> {
+  const res = await fetch('/api/sheets-tracking?action=status', {
+    headers: buildBridgeHeaders(customWebhookUrl),
+  });
+  const data = await res.json().catch(() => ({}));
+  return {
+    ok: Boolean(data?.ok),
+    bridgeConfigured: Boolean(data?.bridgeConfigured),
+    serverConfigured: Boolean(data?.serverConfigured),
+    ownerEmail: data?.ownerEmail || OWNER_GOOGLE_EMAIL,
+    spreadsheetUrl: data?.spreadsheetUrl,
+  };
+}
+
+export async function fetchBridgeMetadata(
+  customWebhookUrl?: string
+): Promise<SpreadsheetSummary> {
+  const res = await fetch('/api/sheets-tracking?action=meta', {
+    headers: buildBridgeHeaders(customWebhookUrl),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.ok) {
+    throw new Error(
+      data?.error || 'Gagal membaca metadata spreadsheet pemilik.'
+    );
+  }
+  return {
+    spreadsheetId: data.spreadsheetId,
+    title: data.title || TRACKING_SPREADSHEET_TITLE,
+    spreadsheetUrl:
+      data.spreadsheetUrl ||
+      `https://docs.google.com/spreadsheets/d/${data.spreadsheetId}/edit`,
+    sheets: Array.isArray(data.sheets) ? data.sheets : [],
+  };
+}
+
+export async function fetchBridgeYearRows(
+  year: string,
+  customWebhookUrl?: string
+): Promise<{ summary: SpreadsheetSummary; rows: TrackedSuratRow[] }> {
+  const res = await fetch(
+    `/api/sheets-tracking?action=list&year=${encodeURIComponent(year)}`,
+    {
+      headers: buildBridgeHeaders(customWebhookUrl),
+    }
+  );
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.ok) {
+    throw new Error(
+      data?.error || `Gagal memuat data sheet ${year} dari spreadsheet pemilik.`
+    );
+  }
+
+  const rawRows: Array<{ rowNumber: number; values: string[] }> = Array.isArray(
+    data.rows
+  )
+    ? data.rows
+    : [];
+
+  const rows: TrackedSuratRow[] = rawRows
+    .map((entry) => {
+      const row = entry.values || [];
+      let rawDraft: SuratTugasData | undefined;
+      if (row[16]) {
+        try {
+          rawDraft = JSON.parse(row[16]) as SuratTugasData;
+        } catch {
+          rawDraft = undefined;
+        }
+      }
+      return {
+        rowNumber: entry.rowNumber,
+        idSurat: row[1] || '',
+        waktuInput: row[2] || '',
+        nomorSurat: row[3] || '',
+        tanggalSurat: row[4] || '',
+        kriteria: row[5] || '',
+        dasarAsal: row[6] || '',
+        dasarNomor: row[7] || '',
+        dasarTanggal: row[8] || '',
+        namaKegiatan: row[9] || '',
+        lokasiTujuan: row[10] || '',
+        tanggalMulai: row[11] || '',
+        tanggalSelesai: row[12] || '',
+        jumlahPegawai: Number(row[13]) || 0,
+        daftarPegawaiRingkas: row[14] || '',
+        penandatangan: row[15] || '',
+        rawDraft,
+      };
+    })
+    .filter((r) => r.idSurat || r.namaKegiatan || r.daftarPegawaiRingkas)
+    .reverse();
+
+  return {
+    summary: {
+      spreadsheetId: data.spreadsheetId,
+      title: data.title || TRACKING_SPREADSHEET_TITLE,
+      spreadsheetUrl:
+        data.spreadsheetUrl ||
+        `https://docs.google.com/spreadsheets/d/${data.spreadsheetId}/edit`,
+      sheets: Array.isArray(data.sheets) ? data.sheets : [],
+    },
+    rows,
+  };
+}
+
+export async function ensureBridgeYearSheet(
+  year: string,
+  customWebhookUrl?: string
+): Promise<{ createdNew: boolean; summary: SpreadsheetSummary }> {
+  const res = await fetch('/api/sheets-tracking', {
+    method: 'POST',
+    headers: buildBridgeHeaders(customWebhookUrl),
+    body: JSON.stringify({
+      action: 'ensureYear',
+      year,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.ok) {
+    throw new Error(
+      data?.error || `Gagal membuat sheet tahun ${year} di spreadsheet pemilik.`
+    );
+  }
+  return {
+    createdNew: Boolean(data.createdNew),
+    summary: {
+      spreadsheetId: data.spreadsheetId,
+      title: data.title || TRACKING_SPREADSHEET_TITLE,
+      spreadsheetUrl:
+        data.spreadsheetUrl ||
+        `https://docs.google.com/spreadsheets/d/${data.spreadsheetId}/edit`,
+      sheets: Array.isArray(data.sheets) ? data.sheets : [],
+    },
+  };
+}
+
+export async function upsertSuratViaBridge(
+  year: string,
+  surat: SuratTugasData,
+  overwriteConfirmed: boolean,
+  customWebhookUrl?: string
+): Promise<BridgeUpsertResponse> {
+  const rowValues = buildRowValues(1, surat);
+  const res = await fetch('/api/sheets-tracking', {
+    method: 'POST',
+    headers: buildBridgeHeaders(customWebhookUrl),
+    body: JSON.stringify({
+      action: 'upsert',
+      year,
+      suratId: surat.id,
+      rowValues,
+      overwriteConfirmed,
+    }),
+  });
+  const data = (await res.json().catch(() => ({}))) as BridgeUpsertResponse;
+  if (!res.ok || data.ok === false) {
+    throw new Error(
+      data?.error || 'Gagal menyimpan Surat Tugas ke spreadsheet pemilik.'
+    );
+  }
+  return data;
 }

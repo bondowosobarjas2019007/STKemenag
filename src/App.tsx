@@ -39,16 +39,23 @@ import {
 import {
   appendSuratToYearSheet,
   checkExistingRecordRow,
+  ensureBridgeYearSheet,
   ensureYearSheet,
   extractSpreadsheetId,
+  fetchBridgeYearRows,
   fetchRowsForSheet,
+  fetchSheetsBridgeStatus,
   findOrCreateTrackingSpreadsheet,
   getSpreadsheetMetadata,
   getTargetYearForSurat,
+  isOwnerAccount,
+  OWNER_GOOGLE_EMAIL,
+  setSpreadsheetViewOnlyAndProtected,
   SheetsAuthError,
   SpreadsheetSummary,
   TrackedSuratRow,
   updateExistingSuratRow,
+  upsertSuratViaBridge,
 } from './services/googleSheets';
 import {
   ArsipSurat,
@@ -73,7 +80,20 @@ const STORAGE_KEYS = {
   PEGAWAI_LEGACY: 'situgas_kemenag_jember_pegawai_v1',
   ARSIP: 'situgas_kemenag_jember_arsip_v1',
   SHEETS_ID: 'situgas_kemenag_jember_sheets_id_v1',
+  BRIDGE_URL: 'situgas_kemenag_jember_bridge_url_v1',
 };
+
+function computeSuratSignature(data: SuratTugasData): string {
+  return JSON.stringify(data);
+}
+
+function isSuratReadyForTracking(data: SuratTugasData): boolean {
+  const hasKegiatan = Boolean(data.namaKegiatan.trim() || data.dasarNomor.trim());
+  const hasPegawai = data.pegawaiList.some(
+    (p) => Boolean(p.nama.trim()) || Boolean(p.nip.trim())
+  );
+  return hasKegiatan && hasPegawai;
+}
 
 function createEmptyPegawai(suffix = ''): Pegawai {
   return {
@@ -147,6 +167,7 @@ export default function App() {
   const [needsAuth, setNeedsAuth] = useState<boolean>(true);
   const [isGoogleConnecting, setIsGoogleConnecting] = useState<boolean>(false);
   const [isSyncingSheets, setIsSyncingSheets] = useState<boolean>(false);
+  const [isProtectingSheets, setIsProtectingSheets] = useState<boolean>(false);
   const [sheetsError, setSheetsError] = useState<string | null>(null);
   const [savedSpreadsheetId, setSavedSpreadsheetId] = useState<string>(() => {
     try {
@@ -155,6 +176,15 @@ export default function App() {
       return '';
     }
   });
+  const [localBridgeUrl, setLocalBridgeUrl] = useState<string>(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.BRIDGE_URL) || '';
+    } catch {
+      return '';
+    }
+  });
+  const [serverBridgeConfigured, setServerBridgeConfigured] =
+    useState<boolean>(false);
   const [spreadsheet, setSpreadsheet] = useState<SpreadsheetSummary | null>(null);
   const [selectedYear, setSelectedYear] = useState<string>(() =>
     String(new Date().getFullYear())
@@ -166,7 +196,23 @@ export default function App() {
     year: string;
     rowNumber: number;
     draft: SuratTugasData;
+    viaBridge?: boolean;
   } | null>(null);
+  const [lastSyncedSignature, setLastSyncedSignature] = useState<string>('');
+  const [pendingOutputAction, setPendingOutputAction] = useState<
+    'print' | 'docx' | null
+  >(null);
+
+  const isOwner = isOwnerAccount(googleUser?.email);
+  const bridgeConnected = serverBridgeConfigured || Boolean(localBridgeUrl.trim());
+  const bridgeSource: 'server' | 'local' | 'none' = serverBridgeConfigured
+    ? 'server'
+    : localBridgeUrl.trim()
+      ? 'local'
+      : 'none';
+  const customBridgeHeader = serverBridgeConfigured
+    ? undefined
+    : localBridgeUrl.trim() || undefined;
 
   useEffect(() => {
     try {
@@ -212,6 +258,51 @@ export default function App() {
     }
   }, []);
 
+  const loadBridgeYearData = useCallback(
+    async (yearTitle: string, webhookHeader?: string) => {
+      setIsSyncingSheets(true);
+      setSheetsError(null);
+      try {
+        const res = await fetchBridgeYearRows(yearTitle, webhookHeader);
+        setSpreadsheet(res.summary);
+        setSheetRows(res.rows);
+      } catch (err) {
+        setSheetsError(
+          err instanceof Error
+            ? err.message
+            : 'Gagal memuat data dari Jembatan Google Sheets.'
+        );
+      } finally {
+        setIsSyncingSheets(false);
+      }
+    },
+    []
+  );
+
+  // Check if central Apps Script Bridge is configured on server (or local browser)
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const status = await fetchSheetsBridgeStatus(localBridgeUrl || undefined);
+        if (!active) return;
+        setServerBridgeConfigured(status.serverConfigured);
+        if (status.bridgeConfigured) {
+          const headerOverride = localBridgeUrl.trim() || undefined;
+          const res = await fetchBridgeYearRows(selectedYear, headerOverride);
+          if (!active) return;
+          setSpreadsheet(res.summary);
+          setSheetRows(res.rows);
+        }
+      } catch {
+        // Bridge optional until owner sets APPS_SCRIPT_WEBHOOK_URL
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [localBridgeUrl]);
+
   const loadYearRows = useCallback(
     async (ssId: string, yearTitle: string, token: string) => {
       setIsSyncingSheets(true);
@@ -254,96 +345,211 @@ export default function App() {
     [persistSpreadsheetId, savedSpreadsheetId]
   );
 
+  const runOutputAction = useCallback(
+    async (action: 'print' | 'docx', targetSurat: SuratTugasData) => {
+      if (action === 'print') {
+        window.setTimeout(() => {
+          window.print();
+        }, 80);
+      } else {
+        setIsExportingDocx(true);
+        try {
+          await exportSuratTugasDocx(targetSurat);
+          showToast('Tercatat di Google Sheets & file Word (.docx) diunduh');
+        } catch (err) {
+          console.error(err);
+          showToast('Gagal mengekspor file Word (.docx)');
+        } finally {
+          setIsExportingDocx(false);
+        }
+      }
+    },
+    [showToast]
+  );
+
   const syncDraftToGoogleSheets = useCallback(
-    async (draft: SuratTugasData, tokenOverride?: string) => {
+    async (
+      draft: SuratTugasData,
+      tokenOverride?: string,
+      afterAction?: 'print' | 'docx' | null,
+      ownerEmailOverride?: string | null
+    ): Promise<boolean> => {
       const token = tokenOverride || getAccessToken();
       const targetYear = getTargetYearForSurat(draft);
+      const effectiveEmail = ownerEmailOverride ?? googleUser?.email;
+      const canUseOwnerDirect = Boolean(token) && isOwnerAccount(effectiveEmail);
 
-      if (!token) {
-        setNeedsAuth(true);
-        setAuthPromptDraft(draft);
-        return;
-      }
+      // 1. Prefer direct Owner OAuth if logged in as bondowosobarjas2019.007@gmail.com
+      if (canUseOwnerDirect && token) {
+        setIsSyncingSheets(true);
+        setSheetsError(null);
+        try {
+          const summary = await ensureConnectedSpreadsheet(token, targetYear);
+          const { createdNew, summary: ensuredSummary } = await ensureYearSheet(
+            summary.spreadsheetId,
+            targetYear,
+            token
+          );
+          setSpreadsheet(ensuredSummary);
+          setSelectedYear(targetYear);
 
-      setIsSyncingSheets(true);
-      setSheetsError(null);
-      try {
-        const summary = await ensureConnectedSpreadsheet(token, targetYear);
-        const { createdNew, summary: ensuredSummary } = await ensureYearSheet(
-          summary.spreadsheetId,
-          targetYear,
-          token
-        );
-        setSpreadsheet(ensuredSummary);
-        setSelectedYear(targetYear);
+          const { existingRowNumber, nextRowNumberDisplay } =
+            await checkExistingRecordRow(
+              ensuredSummary.spreadsheetId,
+              targetYear,
+              draft.id,
+              token
+            );
 
-        const { existingRowNumber, nextRowNumberDisplay } =
-          await checkExistingRecordRow(
+          if (existingRowNumber !== null) {
+            setPendingOutputAction(afterAction || null);
+            setOverwriteConfirm({
+              spreadsheetId: ensuredSummary.spreadsheetId,
+              year: targetYear,
+              rowNumber: existingRowNumber,
+              draft: {
+                ...draft,
+                pegawaiList: draft.pegawaiList.map((p) => ({ ...p })),
+              },
+              viaBridge: false,
+            });
+            setIsSyncingSheets(false);
+            return false;
+          }
+
+          await appendSuratToYearSheet(
             ensuredSummary.spreadsheetId,
             targetYear,
-            draft.id,
+            nextRowNumberDisplay,
+            draft,
             token
           );
 
-        if (existingRowNumber !== null) {
-          // Mandatory explicit confirmation before mutating an existing row
-          setOverwriteConfirm({
-            spreadsheetId: ensuredSummary.spreadsheetId,
-            year: targetYear,
-            rowNumber: existingRowNumber,
-            draft: {
-              ...draft,
-              pegawaiList: draft.pegawaiList.map((p) => ({ ...p })),
-            },
-          });
+          const refreshed = await fetchRowsForSheet(
+            ensuredSummary.spreadsheetId,
+            targetYear,
+            token
+          );
+          setSheetRows(refreshed);
+          setLastSyncedSignature(computeSuratSignature(draft));
+          setPendingOutputAction(null);
+
+          showToast(
+            createdNew
+              ? `Sheet baru "${targetYear}" dibuat & Surat Tugas tersimpan ke Google Sheets`
+              : `Tersimpan ke Google Sheets Pemilik (Sheet ${targetYear})`
+          );
+
+          if (afterAction) {
+            await runOutputAction(afterAction, draft);
+          }
+          return true;
+        } catch (err) {
+          if (err instanceof SheetsAuthError) {
+            clearAccessToken();
+            setNeedsAuth(true);
+            setPendingOutputAction(afterAction || null);
+            setAuthPromptDraft(draft);
+            return false;
+          }
+          const msg =
+            err instanceof Error
+              ? err.message
+              : 'Gagal menyimpan ke Google Sheets.';
+          setSheetsError(msg);
+          showToast(msg);
+          return false;
+        } finally {
           setIsSyncingSheets(false);
-          return;
         }
-
-        await appendSuratToYearSheet(
-          ensuredSummary.spreadsheetId,
-          targetYear,
-          nextRowNumberDisplay,
-          draft,
-          token
-        );
-
-        const refreshed = await fetchRowsForSheet(
-          ensuredSummary.spreadsheetId,
-          targetYear,
-          token
-        );
-        setSheetRows(refreshed);
-
-        showToast(
-          createdNew
-            ? `Sheet baru "${targetYear}" dibuat & Surat Tugas tersimpan ke Google Sheets`
-            : `Tersimpan ke Google Sheets (Sheet ${targetYear})`
-        );
-      } catch (err) {
-        if (err instanceof SheetsAuthError) {
-          clearAccessToken();
-          setNeedsAuth(true);
-          setAuthPromptDraft(draft);
-        }
-        const msg =
-          err instanceof Error
-            ? err.message
-            : 'Gagal menyimpan ke Google Sheets.';
-        setSheetsError(msg);
-        showToast(msg);
-      } finally {
-        setIsSyncingSheets(false);
       }
+
+      // 2. Centralized Bridge Relay (for other users without Owner Google login)
+      if (bridgeConnected) {
+        setIsSyncingSheets(true);
+        setSheetsError(null);
+        try {
+          const res = await upsertSuratViaBridge(
+            targetYear,
+            draft,
+            false,
+            customBridgeHeader
+          );
+
+          if (res.needsOverwriteConfirm && res.existingRowNumber) {
+            setPendingOutputAction(afterAction || null);
+            setOverwriteConfirm({
+              spreadsheetId: res.spreadsheetId || 'owner-sheet',
+              year: targetYear,
+              rowNumber: res.existingRowNumber,
+              draft: {
+                ...draft,
+                pegawaiList: draft.pegawaiList.map((p) => ({ ...p })),
+              },
+              viaBridge: true,
+            });
+            setIsSyncingSheets(false);
+            return false;
+          }
+
+          setSelectedYear(targetYear);
+          await loadBridgeYearData(targetYear, customBridgeHeader);
+          setLastSyncedSignature(computeSuratSignature(draft));
+          setPendingOutputAction(null);
+
+          showToast(
+            res.createdNew
+              ? `Sheet baru "${targetYear}" dibuat & tersimpan ke Spreadsheet Pemilik`
+              : `Tersimpan ke Spreadsheet Pemilik (Sheet ${targetYear})`
+          );
+
+          if (afterAction) {
+            await runOutputAction(afterAction, draft);
+          }
+          return true;
+        } catch (err) {
+          const msg =
+            err instanceof Error
+              ? err.message
+              : 'Gagal menyimpan ke Spreadsheet Pemilik.';
+          setSheetsError(msg);
+          showToast(msg);
+          return false;
+        } finally {
+          setIsSyncingSheets(false);
+        }
+      }
+
+      // 3. Neither Owner OAuth nor Bridge is configured -> block output & prompt
+      setNeedsAuth(true);
+      setPendingOutputAction(afterAction || null);
+      setAuthPromptDraft(draft);
+      return false;
     },
-    [ensureConnectedSpreadsheet, showToast]
+    [
+      bridgeConnected,
+      customBridgeHeader,
+      ensureConnectedSpreadsheet,
+      googleUser?.email,
+      loadBridgeYearData,
+      runOutputAction,
+      showToast,
+    ]
   );
 
   useEffect(() => {
     const unsubscribe = initAuth(
       (user, token) => {
         setGoogleUser(user);
+        if (!isOwnerAccount(user.email)) {
+          setNeedsAuth(true);
+          setSheetsError(
+            `Akun ${user.email} bukan pemilik database (${OWNER_GOOGLE_EMAIL}). Penyimpanan database hanya terpusat ke spreadsheet akun pemilik.`
+          );
+          return;
+        }
         setNeedsAuth(false);
+        setSheetsError(null);
         if (savedSpreadsheetId) {
           void (async () => {
             try {
@@ -375,12 +581,28 @@ export default function App() {
     try {
       const res = await googleSignIn();
       if (res) {
+        if (!isOwnerAccount(res.user.email)) {
+          await logoutGoogle();
+          setGoogleUser(null);
+          setNeedsAuth(true);
+          const msg = `Akses ditolak: akun ${res.user.email} bukan pemilik database (${OWNER_GOOGLE_EMAIL}). Hanya akun pemilik yang dapat menghubungkan spreadsheet utama.`;
+          setSheetsError(msg);
+          showToast(msg);
+          return;
+        }
+
         setGoogleUser(res.user);
         setNeedsAuth(false);
         const draftToSync = authPromptDraft;
+        const queuedAction = pendingOutputAction;
         setAuthPromptDraft(null);
         if (draftToSync) {
-          await syncDraftToGoogleSheets(draftToSync, res.accessToken);
+          await syncDraftToGoogleSheets(
+            draftToSync,
+            res.accessToken,
+            queuedAction,
+            res.user.email
+          );
         } else {
           const currentYear = String(new Date().getFullYear());
           const summary = await ensureConnectedSpreadsheet(
@@ -393,7 +615,7 @@ export default function App() {
             currentYear;
           setSelectedYear(tabToLoad);
           await loadYearRows(summary.spreadsheetId, tabToLoad, res.accessToken);
-          showToast('Berhasil terhubung ke Google Sheets');
+          showToast('Berhasil terhubung sebagai Pemilik Spreadsheet');
         }
       }
     } catch (err) {
@@ -410,14 +632,16 @@ export default function App() {
     await logoutGoogle();
     setGoogleUser(null);
     setNeedsAuth(true);
-    setSpreadsheet(null);
-    setSheetRows([]);
+    if (!bridgeConnected) {
+      setSpreadsheet(null);
+      setSheetRows([]);
+    }
     showToast('Akun Google diputuskan');
   };
 
   const handleAutoSetupSpreadsheet = async () => {
     const token = getAccessToken();
-    if (!token) {
+    if (!token || !isOwner) {
       setNeedsAuth(true);
       return;
     }
@@ -450,7 +674,7 @@ export default function App() {
 
   const handleConnectSpreadsheetId = async (rawIdOrUrl: string) => {
     const token = getAccessToken();
-    if (!token) {
+    if (!token || !isOwner) {
       setNeedsAuth(true);
       return;
     }
@@ -478,52 +702,185 @@ export default function App() {
       setSheetsError(
         err instanceof Error
           ? err.message
-          : 'Gagal membaca Google Spreadsheet tersebut. Pastikan URL/ID benar dan dapat diakses.'
+          : 'Gagal membaca Google Spreadsheet tersebut. Pastikan URL/ID benar dan dimiliki akun Anda.'
       );
     } finally {
       setIsSyncingSheets(false);
     }
+  };
+
+  const handleProtectSpreadsheet = async () => {
+    const token = getAccessToken();
+    if (!token || !isOwner || !spreadsheet) {
+      showToast('Masuk sebagai pemilik terlebih dahulu.');
+      return;
+    }
+    setIsProtectingSheets(true);
+    setSheetsError(null);
+    try {
+      const res = await setSpreadsheetViewOnlyAndProtected(
+        spreadsheet.spreadsheetId,
+        token
+      );
+      showToast(
+        res.protectedTabsCount > 0
+          ? `Spreadsheet dikunci View-Only & ${res.protectedTabsCount} sheet diproteksi dari edit langsung`
+          : 'Spreadsheet dikunci View-Only (hanya dapat diedit oleh pemilik / via aplikasi)'
+      );
+    } catch (err) {
+      setSheetsError(
+        err instanceof Error
+          ? err.message
+          : 'Gagal mengunci proteksi Google Spreadsheet.'
+      );
+    } finally {
+      setIsProtectingSheets(false);
+    }
+  };
+
+  const handleSaveBridgeUrl = async (rawUrl: string) => {
+    const trimmed = rawUrl.trim();
+    setIsSyncingSheets(true);
+    setSheetsError(null);
+    try {
+      const status = await fetchSheetsBridgeStatus(trimmed);
+      if (!status.bridgeConfigured) {
+        throw new Error(
+          'URL Apps Script tidak valid. Harus berbentuk https://script.google.com/macros/s/.../exec'
+        );
+      }
+      const res = await fetchBridgeYearRows(selectedYear, trimmed);
+      try {
+        localStorage.setItem(STORAGE_KEYS.BRIDGE_URL, trimmed);
+      } catch {
+        // ignore storage quota errors
+      }
+      setLocalBridgeUrl(trimmed);
+      setSpreadsheet(res.summary);
+      setSheetRows(res.rows);
+      showToast('Jembatan Apps Script terhubung & siap digunakan');
+    } catch (err) {
+      setSheetsError(
+        err instanceof Error
+          ? err.message
+          : 'Gagal menguji URL Web App Apps Script.'
+      );
+    } finally {
+      setIsSyncingSheets(false);
+    }
+  };
+
+  const handleClearLocalBridgeUrl = () => {
+    try {
+      localStorage.removeItem(STORAGE_KEYS.BRIDGE_URL);
+    } catch {
+      // ignore storage errors
+    }
+    setLocalBridgeUrl('');
+    showToast('URL Bridge lokal dihapus');
   };
 
   const handleCreateYearSheetManual = async (year: string) => {
     const token = getAccessToken();
-    if (!token || !spreadsheet) {
-      setNeedsAuth(!token);
+    if (isOwner && token && spreadsheet) {
+      setIsSyncingSheets(true);
+      setSheetsError(null);
+      try {
+        const { createdNew, summary } = await ensureYearSheet(
+          spreadsheet.spreadsheetId,
+          year,
+          token
+        );
+        setSpreadsheet(summary);
+        setSelectedYear(year);
+        await loadYearRows(summary.spreadsheetId, year, token);
+        showToast(
+          createdNew
+            ? `Sheet baru "${year}" berhasil dibuat`
+            : `Sheet "${year}" sudah tersedia`
+        );
+      } catch (err) {
+        if (err instanceof SheetsAuthError) {
+          clearAccessToken();
+          setNeedsAuth(true);
+        }
+        setSheetsError(
+          err instanceof Error ? err.message : 'Gagal membuat sheet tahun baru.'
+        );
+      } finally {
+        setIsSyncingSheets(false);
+      }
       return;
     }
-    setIsSyncingSheets(true);
-    setSheetsError(null);
-    try {
-      const { createdNew, summary } = await ensureYearSheet(
-        spreadsheet.spreadsheetId,
-        year,
-        token
-      );
-      setSpreadsheet(summary);
-      setSelectedYear(year);
-      await loadYearRows(summary.spreadsheetId, year, token);
-      showToast(
-        createdNew
-          ? `Sheet baru "${year}" berhasil dibuat`
-          : `Sheet "${year}" sudah tersedia`
-      );
-    } catch (err) {
-      if (err instanceof SheetsAuthError) {
-        clearAccessToken();
-        setNeedsAuth(true);
+
+    if (bridgeConnected) {
+      setIsSyncingSheets(true);
+      setSheetsError(null);
+      try {
+        const { createdNew, summary } = await ensureBridgeYearSheet(
+          year,
+          customBridgeHeader
+        );
+        setSpreadsheet(summary);
+        setSelectedYear(year);
+        await loadBridgeYearData(year, customBridgeHeader);
+        showToast(
+          createdNew
+            ? `Sheet baru "${year}" berhasil dibuat di Spreadsheet Pemilik`
+            : `Sheet "${year}" sudah tersedia`
+        );
+      } catch (err) {
+        setSheetsError(
+          err instanceof Error ? err.message : 'Gagal membuat sheet tahun baru.'
+        );
+      } finally {
+        setIsSyncingSheets(false);
       }
-      setSheetsError(
-        err instanceof Error ? err.message : 'Gagal membuat sheet tahun baru.'
-      );
-    } finally {
-      setIsSyncingSheets(false);
+      return;
     }
+
+    setNeedsAuth(true);
   };
 
   const handleConfirmOverwriteRow = async () => {
     if (!overwriteConfirm) return;
+    const queuedAction = pendingOutputAction;
+
+    if (overwriteConfirm.viaBridge) {
+      setIsSyncingSheets(true);
+      setSheetsError(null);
+      try {
+        await upsertSuratViaBridge(
+          overwriteConfirm.year,
+          overwriteConfirm.draft,
+          true,
+          customBridgeHeader
+        );
+        await loadBridgeYearData(overwriteConfirm.year, customBridgeHeader);
+        setLastSyncedSignature(computeSuratSignature(overwriteConfirm.draft));
+        const savedDraft = overwriteConfirm.draft;
+        showToast(
+          `Baris ${overwriteConfirm.rowNumber} di Sheet ${overwriteConfirm.year} diperbarui`
+        );
+        setOverwriteConfirm(null);
+        setPendingOutputAction(null);
+        if (queuedAction) {
+          await runOutputAction(queuedAction, savedDraft);
+        }
+      } catch (err) {
+        setSheetsError(
+          err instanceof Error
+            ? err.message
+            : 'Gagal memperbarui baris melalui Jembatan Sheets.'
+        );
+      } finally {
+        setIsSyncingSheets(false);
+      }
+      return;
+    }
+
     const token = getAccessToken();
-    if (!token) {
+    if (!token || !isOwner) {
       setNeedsAuth(true);
       setOverwriteConfirm(null);
       return;
@@ -544,10 +901,16 @@ export default function App() {
         token
       );
       setSheetRows(refreshed);
+      setLastSyncedSignature(computeSuratSignature(overwriteConfirm.draft));
+      const savedDraft = overwriteConfirm.draft;
       showToast(
         `Baris ${overwriteConfirm.rowNumber} di Sheet ${overwriteConfirm.year} diperbarui`
       );
       setOverwriteConfirm(null);
+      setPendingOutputAction(null);
+      if (queuedAction) {
+        await runOutputAction(queuedAction, savedDraft);
+      }
     } catch (err) {
       if (err instanceof SheetsAuthError) {
         clearAccessToken();
@@ -742,21 +1105,32 @@ export default function App() {
     showToast('Surat Tugas disimpan ke Arsip Draft');
   };
 
-  const handlePrintPdf = () => {
-    window.print();
+  const handlePrintPdf = async () => {
+    if (!isSuratReadyForTracking(surat)) {
+      showToast(
+        'Lengkapi isi Surat Tugas (kegiatan/dasar & pegawai) terlebih dahulu sebelum mencetak'
+      );
+      return;
+    }
+    if (lastSyncedSignature === computeSuratSignature(surat)) {
+      window.print();
+      return;
+    }
+    await syncDraftToGoogleSheets(surat, undefined, 'print');
   };
 
   const handleExportDocx = async () => {
-    setIsExportingDocx(true);
-    try {
-      await exportSuratTugasDocx(surat);
-      showToast('File Word (.docx) berhasil diunduh');
-    } catch (err) {
-      console.error(err);
-      showToast('Gagal mengekspor file Word (.docx)');
-    } finally {
-      setIsExportingDocx(false);
+    if (!isSuratReadyForTracking(surat)) {
+      showToast(
+        'Lengkapi isi Surat Tugas (kegiatan/dasar & pegawai) terlebih dahulu sebelum mengunduh'
+      );
+      return;
     }
+    if (lastSyncedSignature === computeSuratSignature(surat)) {
+      await runOutputAction('docx', surat);
+      return;
+    }
+    await syncDraftToGoogleSheets(surat, undefined, 'docx');
   };
 
   const handleUsePegawaiFromManager = (peg: Pegawai) => {
@@ -942,11 +1316,12 @@ export default function App() {
         <div className="order-2 lg:order-3 flex items-center shrink-0">
           <button
             type="button"
-            onClick={handlePrintPdf}
-            className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] transition-colors whitespace-nowrap shrink-0"
+            disabled={isSyncingSheets}
+            onClick={() => void handlePrintPdf()}
+            className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
           >
             <Printer className="w-3.5 h-3.5" />
-            Cetak / PDF
+            {isSyncingSheets ? 'Menyimpan...' : 'Cetak / PDF'}
           </button>
         </div>
       </header>
@@ -1035,8 +1410,13 @@ export default function App() {
           <TrackingSheetsManager
             googleUser={googleUser}
             needsAuth={needsAuth}
+            isOwner={isOwner}
+            bridgeConnected={bridgeConnected}
+            bridgeSource={bridgeSource}
+            localBridgeUrl={localBridgeUrl}
             isConnecting={isGoogleConnecting}
             isSyncing={isSyncingSheets}
+            isProtecting={isProtectingSheets}
             spreadsheet={spreadsheet}
             selectedYear={selectedYear}
             rows={sheetRows}
@@ -1045,27 +1425,42 @@ export default function App() {
             onGoogleLogout={() => void handleGoogleLogout()}
             onAutoSetupSpreadsheet={() => void handleAutoSetupSpreadsheet()}
             onConnectSpreadsheetId={(raw) => void handleConnectSpreadsheetId(raw)}
+            onProtectSpreadsheet={() => void handleProtectSpreadsheet()}
+            onSaveBridgeUrl={(url) => void handleSaveBridgeUrl(url)}
+            onClearLocalBridgeUrl={handleClearLocalBridgeUrl}
             onSelectYear={(year) => {
               setSelectedYear(year);
               const token = getAccessToken();
-              if (token && spreadsheet) {
+              if (isOwner && token && spreadsheet) {
                 void loadYearRows(spreadsheet.spreadsheetId, year, token);
+              } else if (bridgeConnected) {
+                void loadBridgeYearData(year, customBridgeHeader);
               }
             }}
             onCreateYearSheet={(year) => void handleCreateYearSheetManual(year)}
             onRefreshRows={() => {
               const token = getAccessToken();
-              if (token && spreadsheet) {
+              if (isOwner && token && spreadsheet) {
                 void loadYearRows(spreadsheet.spreadsheetId, selectedYear, token);
+              } else if (bridgeConnected) {
+                void loadBridgeYearData(selectedYear, customBridgeHeader);
               }
             }}
-            onLoadTrackedDraft={(draft) => {
+            onLoadTrackedDraft={(draft, asTemplateCopy) => {
               setSurat({
                 ...draft,
+                id: asTemplateCopy ? `draft-${Date.now()}` : draft.id,
                 pegawaiList: draft.pegawaiList.map((p) => ({ ...p })),
               });
+              if (!asTemplateCopy) {
+                setLastSyncedSignature(computeSuratSignature(draft));
+              }
               setActiveTab('editor');
-              showToast('Data Surat Tugas dari Google Sheets dimuat ke editor');
+              showToast(
+                asTemplateCopy
+                  ? 'Salinan Surat Tugas dimuat ke editor sebagai draft baru'
+                  : 'Data Surat Tugas dari Google Sheets dimuat ke editor'
+              );
             }}
           />
         </main>
@@ -1779,17 +2174,25 @@ export default function App() {
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#0B5D3B] bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
               >
                 <FileSpreadsheet className="w-3.5 h-3.5" />
-                {isSyncingSheets ? 'Menyimpan...' : 'Simpan ke Sheets'}
+                {isSyncingSheets
+                  ? 'Menyimpan...'
+                  : lastSyncedSignature === computeSuratSignature(surat)
+                    ? 'Tercatat di Sheets'
+                    : 'Simpan ke Sheets (Wajib)'}
               </button>
 
               <button
                 type="button"
-                disabled={isExportingDocx}
-                onClick={handleExportDocx}
+                disabled={isExportingDocx || isSyncingSheets}
+                onClick={() => void handleExportDocx()}
                 className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
               >
                 <Download className="w-3.5 h-3.5" />
-                {isExportingDocx ? 'Menyiapkan...' : 'Unduh Word (.docx)'}
+                {isExportingDocx
+                  ? 'Menyiapkan...'
+                  : isSyncingSheets
+                    ? 'Menyimpan ke Sheets...'
+                    : 'Unduh Word (.docx)'}
               </button>
             </div>
           </div>
@@ -1832,10 +2235,25 @@ export default function App() {
       {/* GOOGLE SHEETS SIGN-IN PROMPT MODAL */}
       <SheetsAuthPromptModal
         isOpen={authPromptDraft !== null}
-        targetYear={authPromptDraft ? getTargetYearForSurat(authPromptDraft) : String(new Date().getFullYear())}
+        targetYear={
+          authPromptDraft
+            ? getTargetYearForSurat(authPromptDraft)
+            : String(new Date().getFullYear())
+        }
         isConnecting={isGoogleConnecting}
+        pendingActionLabel={
+          pendingOutputAction === 'print'
+            ? 'Cetak / PDF'
+            : pendingOutputAction === 'docx'
+              ? 'Unduh Word (.docx)'
+              : null
+        }
         onSignIn={() => void handleGoogleLogin()}
-        onClose={() => setAuthPromptDraft(null)}
+        onOpenTrackingTab={() => setActiveTab('sheets')}
+        onClose={() => {
+          setAuthPromptDraft(null);
+          setPendingOutputAction(null);
+        }}
       />
 
       {/* GOOGLE SHEETS OVERWRITE CONFIRMATION MODAL */}
@@ -1846,7 +2264,10 @@ export default function App() {
         namaKegiatan={overwriteConfirm?.draft.namaKegiatan || ''}
         isBusy={isSyncingSheets}
         onConfirm={() => void handleConfirmOverwriteRow()}
-        onCancel={() => setOverwriteConfirm(null)}
+        onCancel={() => {
+          setOverwriteConfirm(null);
+          setPendingOutputAction(null);
+        }}
       />
     </div>
   );

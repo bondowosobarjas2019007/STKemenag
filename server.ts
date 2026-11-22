@@ -7,6 +7,11 @@ import {
   mapGeminiErrorToFriendlyMessage,
   type DirectoryPegawaiInput,
 } from './lib/parseDasarPdf.ts';
+import {
+  handleRelayGet,
+  handleRelayPost,
+  type RelayPostPayload,
+} from './lib/sheetsRelay.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -117,6 +122,51 @@ async function createServer() {
 
   app.post('/api/parse-dasar-pdf', handleParseDasarPdf);
   app.post('/api/ekstrak-dasar', handleParseDasarPdf);
+
+  app.get('/api/sheets-tracking', async (req, res) => {
+    try {
+      const rawAction = String(req.query.action || 'status');
+      const action =
+        rawAction === 'meta' || rawAction === 'list' ? rawAction : 'status';
+      const year = req.query.year ? String(req.query.year) : undefined;
+      const overrideUrl = req.header('x-apps-script-url');
+      const result = await handleRelayGet({
+        action,
+        year,
+        overrideWebhookUrl: overrideUrl,
+      });
+      res.status(result.status).json(result.body);
+    } catch (err) {
+      console.error('Error GET /api/sheets-tracking:', err);
+      res.status(500).json({
+        ok: false,
+        error:
+          err instanceof Error
+            ? err.message
+            : 'Gagal memproses permintaan jembatan Google Sheets.',
+      });
+    }
+  });
+
+  app.post('/api/sheets-tracking', async (req, res) => {
+    try {
+      const overrideUrl = req.header('x-apps-script-url');
+      const payload = (req.body && typeof req.body === 'object'
+        ? req.body
+        : {}) as RelayPostPayload;
+      const result = await handleRelayPost(payload, overrideUrl);
+      res.status(result.status).json(result.body);
+    } catch (err) {
+      console.error('Error POST /api/sheets-tracking:', err);
+      res.status(500).json({
+        ok: false,
+        error:
+          err instanceof Error
+            ? err.message
+            : 'Gagal menyimpan data melalui jembatan Google Sheets.',
+      });
+    }
+  });
 
   app.use('/api', (_req, res) => {
     res.status(404).json({ error: 'Endpoint API tidak ditemukan.' });
