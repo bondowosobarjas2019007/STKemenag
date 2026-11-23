@@ -1,9 +1,10 @@
 import { KriteriaKeberangkatan, SuratTugasData } from '../types/surat';
+import { ADMIN_EMAIL, isAdminEmail } from './googleAuth';
 
-export const OWNER_GOOGLE_EMAIL = 'bondowosobarjas2019.007@gmail.com';
+export const OWNER_GOOGLE_EMAIL = ADMIN_EMAIL;
 
 export function isOwnerAccount(email?: string | null): boolean {
-  return (email || '').trim().toLowerCase() === OWNER_GOOGLE_EMAIL.toLowerCase();
+  return isAdminEmail(email);
 }
 
 export const TRACKING_SPREADSHEET_TITLE =

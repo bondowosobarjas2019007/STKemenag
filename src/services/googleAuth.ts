@@ -8,6 +8,14 @@ import {
 } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
 
+export const ADMIN_EMAIL =
+  (import.meta.env.VITE_ADMIN_EMAIL || '').trim() ||
+  'bondowosobarjas2019.007@gmail.com';
+
+export function isAdminEmail(email?: string | null): boolean {
+  return (email || '').trim().toLowerCase() === ADMIN_EMAIL.toLowerCase();
+}
+
 export const SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/drive.file',

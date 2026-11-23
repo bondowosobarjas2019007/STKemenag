@@ -1,14 +1,65 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+@custom-variant night (&:where(.theme-night, .theme-night *));
 
 @layer base {
   :root {
     --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
     --font-body: 'Public Sans', system-ui, sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
+
+    /* Normal (Terang Standar) */
+    --st-bg-app: #f8fafc;
+    --st-bg-surface: #ffffff;
+    --st-bg-surface-muted: #f1f5f9;
+    --st-bg-desk: #e6eae8;
+    --st-bg-input: #ffffff;
+    --st-border: #e2e8f0;
+    --st-border-strong: #cbd5e1;
+    --st-text-primary: #0f172a;
+    --st-text-secondary: #334155;
+    --st-text-muted: #64748b;
+    --st-hover-surface: #f8fafc;
+    color-scheme: light;
+  }
+
+  html.theme-night {
+    /* Night Light (Baca Malam / Warm Eye-Care) */
+    --st-bg-app: #fdf6e3;
+    --st-bg-surface: #fbf2db;
+    --st-bg-surface-muted: #f5ecd5;
+    --st-bg-desk: #efe3c4;
+    --st-bg-input: #fffaf0;
+    --st-border: #e4d5b3;
+    --st-border-strong: #d3c096;
+    --st-text-primary: #3b3228;
+    --st-text-secondary: #4e4234;
+    --st-text-muted: #766651;
+    --st-hover-surface: #f5ecd5;
+    color-scheme: light;
+  }
+
+  html.dark {
+    /* Dark Mode */
+    --st-bg-app: #0f172a;
+    --st-bg-surface: #1e293b;
+    --st-bg-surface-muted: #0f172a;
+    --st-bg-desk: #090e1a;
+    --st-bg-input: #0f172a;
+    --st-border: #334155;
+    --st-border-strong: #475569;
+    --st-text-primary: #f1f5f9;
+    --st-text-secondary: #cbd5e1;
+    --st-text-muted: #94a3b8;
+    --st-hover-surface: #273549;
+    color-scheme: dark;
   }
 
   body {
     font-family: var(--font-body);
+    background-color: var(--st-bg-app);
+    color: var(--st-text-primary);
+    transition: background-color 180ms ease, color 180ms ease;
   }
 
   h1, h2, h3, .font-display {
@@ -21,12 +72,63 @@
   }
 }
 
-/* Official Kemenag Surat Tugas Document Typography (matches Arial/Helvetica PDF output) */
+@layer components {
+  .st-app {
+    background-color: var(--st-bg-app);
+    color: var(--st-text-primary);
+  }
+
+  .st-surface {
+    background-color: var(--st-bg-surface);
+    color: var(--st-text-primary);
+    border-color: var(--st-border);
+  }
+
+  .st-surface-muted {
+    background-color: var(--st-bg-surface-muted);
+    color: var(--st-text-secondary);
+    border-color: var(--st-border);
+  }
+
+  .st-desk {
+    background-color: var(--st-bg-desk);
+  }
+
+  .st-input {
+    background-color: var(--st-bg-input);
+    color: var(--st-text-primary);
+    border-color: var(--st-border-strong);
+  }
+
+  .st-input::placeholder {
+    color: var(--st-text-muted);
+    opacity: 0.85;
+  }
+
+  .st-border {
+    border-color: var(--st-border);
+  }
+
+  .st-text-primary {
+    color: var(--st-text-primary);
+  }
+
+  .st-text-secondary {
+    color: var(--st-text-secondary);
+  }
+
+  .st-text-muted {
+    color: var(--st-text-muted);
+  }
+}
+
+/* Official Kemenag Surat Tugas Document Typography (always crisp white paper + black ink) */
 .surat-a4 {
   width: 210mm;
   min-height: 297mm;
   background: #ffffff;
   color: #000000;
+  color-scheme: light;
   font-family: Arial, Helvetica, 'Liberation Sans', sans-serif;
   font-size: 10.5pt;
   line-height: 1.35;
@@ -51,6 +153,7 @@
 @media print {
   html, body {
     background: #ffffff !important;
+    color: #000000 !important;
     margin: 0 !important;
     padding: 0 !important;
     width: 210mm;

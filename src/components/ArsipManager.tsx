@@ -47,10 +47,10 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
     <div className="max-w-6xl mx-auto px-6 py-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">
+          <h1 className="text-xl font-semibold st-text-primary">
             Daftar Draft Surat Tugas
           </h1>
-          <p className="text-sm text-slate-600 mt-1">
+          <p className="text-sm st-text-secondary mt-1">
             Draft tersimpan di penyimpanan lokal peramban ini untuk dibuka kembali, dicatat ke Google Sheets, atau diunduh ke Word (.docx).
           </p>
         </div>
@@ -64,20 +64,20 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
         </button>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-200 flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-slate-50/70">
+      <div className="st-surface border rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b st-border st-surface-muted flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div className="relative flex-1 max-w-md">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <Search className="w-4 h-4 st-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Cari kegiatan, lokasi, dasar surat, atau nama pegawai..."
-              className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+              className="w-full pl-9 pr-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
             />
           </div>
 
-          <div className="flex items-center gap-1 p-1 bg-slate-200/70 rounded-lg overflow-x-auto">
+          <div className="flex items-center gap-1 p-1 bg-slate-200/70 night:bg-[#e7d8b4] dark:bg-slate-800 rounded-lg overflow-x-auto">
             {(
               [
                 ['semua', 'Semua'],
@@ -92,8 +92,8 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
                 onClick={() => setFilterKriteria(key)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
                   filterKriteria === key
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
+                    ? 'st-surface st-text-primary shadow-xs'
+                    : 'st-text-secondary hover:opacity-80'
                 }`}
               >
                 {label}
@@ -104,10 +104,10 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
 
         {arsipList.length === 0 ? (
           <div className="py-16 px-6 text-center">
-            <p className="text-sm font-medium text-slate-900">
+            <p className="text-sm font-medium st-text-primary">
               Belum ada Draft Surat Tugas tersimpan
             </p>
-            <p className="text-xs text-slate-500 mt-1 mb-4">
+            <p className="text-xs st-text-muted mt-1 mb-4">
               Klik tombol &ldquo;Simpan ke Draft&rdquo; pada form editor atau bilah alat pratinjau untuk menyimpan surat ke daftar draft lokal.
             </p>
             <button
@@ -119,11 +119,11 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
             </button>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="py-12 px-6 text-center text-sm text-slate-500">
+          <div className="py-12 px-6 text-center text-sm st-text-muted">
             Tidak ada draft yang cocok dengan filter saat ini.
           </div>
         ) : (
-          <div className="divide-y divide-slate-100">
+          <div className="divide-y divide-slate-100 night:divide-[#e4d5b3] dark:divide-slate-700/70">
             {filtered.map((item) => {
               const firstName = item.data.pegawaiList[0]?.nama || 'Belum ada pegawai';
               const totalPegawai = item.data.pegawaiList.length;
@@ -131,24 +131,24 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
               return (
                 <div
                   key={item.id}
-                  className="px-5 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-50/70 transition-colors"
+                  className="px-5 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-50/70 night:hover:bg-[#f5ecd5] dark:hover:bg-slate-800/60 transition-colors"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span
                         className={`px-2 py-0.5 text-[11px] font-semibold rounded-md border ${
                           isTercatat
-                            ? 'bg-emerald-50 text-[#0B5D3B] border-emerald-200'
-                            : 'bg-amber-50 text-amber-800 border-amber-200'
+                            ? 'bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 text-[#0B5D3B] dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                            : 'bg-amber-50 night:bg-amber-900/15 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800'
                         }`}
                       >
                         {isTercatat ? 'Tercatat' : 'Draft'}
                       </span>
-                      <div className="text-sm font-semibold text-slate-900 line-clamp-1">
+                      <div className="text-sm font-semibold st-text-primary line-clamp-1">
                         {item.data.namaKegiatan || 'Kegiatan belum diisi'}
                       </div>
                     </div>
-                    <div className="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <div className="text-xs st-text-muted mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                       <span>{KRITERIA_LABELS[item.data.kriteria]}</span>
                       <span aria-hidden="true">·</span>
                       <span className="font-mono-tabular">
@@ -162,7 +162,7 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
                         {formatTanggalIndo(item.data.tanggalMulai)}
                       </span>
                     </div>
-                    <div className="text-xs text-slate-500 mt-1">
+                    <div className="text-xs st-text-muted mt-1">
                       Dasar: {item.data.dasarAsal} ({item.data.dasarNomor})
                     </div>
                   </div>
@@ -170,7 +170,7 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
                     <button
                       type="button"
                       onClick={() => onSyncArsipToSheets(item)}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#0B5D3B] bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors whitespace-nowrap shrink-0"
+                      className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-lg transition-colors whitespace-nowrap shrink-0"
                     >
                       <FileSpreadsheet className="w-3.5 h-3.5" />
                       {isTercatat ? 'Perbarui di Sheets' : 'Kirim ke Sheets'}
@@ -186,7 +186,7 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
                     <button
                       type="button"
                       onClick={() => onDeleteArsip(item.id)}
-                      className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      className="p-2 st-text-muted hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors"
                       aria-label="Hapus draft"
                     >
                       <Trash2 className="w-4 h-4" />

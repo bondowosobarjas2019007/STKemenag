@@ -1,18 +1,22 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { User } from 'firebase/auth';
 import {
   Check,
   ChevronDown,
   ChevronUp,
+  Crown,
   Download,
   Eye,
   FilePenLine,
   FileSpreadsheet,
+  LogOut,
   Plus,
   Printer,
   RotateCcw,
   Save,
+  ShieldCheck,
   Trash2,
+  User as UserIcon,
   UserCheck,
   Users,
 } from 'lucide-react';
@@ -26,15 +30,23 @@ import {
   DasarPdfUploader,
   ParsedDasarPdfResult,
 } from './components/DasarPdfUploader';
+import { GoogleSignInButton } from './components/GoogleSignInButton';
 import { PegawaiDirectoryModal } from './components/PegawaiDirectoryModal';
 import { DukImportMode, PegawaiManager } from './components/PegawaiManager';
 import { SuratPreview } from './components/SuratPreview';
+import {
+  applyThemeModeToDom,
+  readInitialThemeMode,
+  ThemeMode,
+  ThemeSwitcher,
+} from './components/ThemeSwitcher';
 import { TrackingSheetsManager } from './components/TrackingSheetsManager';
 import {
   clearAccessToken,
   getAccessToken,
   googleSignIn,
   initAuth,
+  isAdminEmail,
   logoutGoogle,
 } from './services/googleAuth';
 import {
@@ -208,7 +220,13 @@ export default function App() {
     useState<boolean>(false);
   const [docxConfirmError, setDocxConfirmError] = useState<string | null>(null);
 
-  const isOwner = isOwnerAccount(googleUser?.email);
+  const [themeMode, setThemeMode] = useState<ThemeMode>(readInitialThemeMode);
+  const [roleMenuOpen, setRoleMenuOpen] = useState<boolean>(false);
+  const roleMenuRef = useRef<HTMLDivElement | null>(null);
+  const adminWelcomedEmailRef = useRef<string | null>(null);
+
+  const isOwner = isOwnerAccount(googleUser?.email) || isAdminEmail(googleUser?.email);
+  const isAdminMode = isOwner && !needsAuth;
   const bridgeConnected = serverBridgeConfigured || Boolean(localBridgeUrl.trim());
   const bridgeSource: 'server' | 'local' | 'none' = serverBridgeConfigured
     ? 'server'
@@ -218,6 +236,33 @@ export default function App() {
   const customBridgeHeader = serverBridgeConfigured
     ? undefined
     : localBridgeUrl.trim() || undefined;
+
+  useEffect(() => {
+    applyThemeModeToDom(themeMode);
+  }, [themeMode]);
+
+  useEffect(() => {
+    if (!roleMenuOpen) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (
+        roleMenuRef.current &&
+        !roleMenuRef.current.contains(event.target as Node)
+      ) {
+        setRoleMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setRoleMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [roleMenuOpen]);
 
   useEffect(() => {
     try {
@@ -585,6 +630,7 @@ export default function App() {
         setGoogleUser(user);
         if (!isOwnerAccount(user.email)) {
           setNeedsAuth(true);
+          adminWelcomedEmailRef.current = null;
           setSheetsError(
             `Akun ${user.email} bukan pemilik database (${OWNER_GOOGLE_EMAIL}). Penyimpanan database hanya terpusat ke spreadsheet akun pemilik.`
           );
@@ -592,6 +638,10 @@ export default function App() {
         }
         setNeedsAuth(false);
         setSheetsError(null);
+        if (user.email && adminWelcomedEmailRef.current !== user.email) {
+          adminWelcomedEmailRef.current = user.email;
+          showToast(`Selamat datang, Admin (${user.email}). Akses penuh aktif.`);
+        }
         if (savedSpreadsheetId) {
           void (async () => {
             try {
@@ -612,10 +662,11 @@ export default function App() {
       (user) => {
         setGoogleUser(user);
         setNeedsAuth(true);
+        adminWelcomedEmailRef.current = null;
       }
     );
     return unsubscribe;
-  }, [loadYearRows, savedSpreadsheetId, selectedYear]);
+  }, [loadYearRows, savedSpreadsheetId, selectedYear, showToast]);
 
   const handleGoogleLogin = async () => {
     setIsGoogleConnecting(true);
@@ -627,14 +678,20 @@ export default function App() {
           await logoutGoogle();
           setGoogleUser(null);
           setNeedsAuth(true);
+          adminWelcomedEmailRef.current = null;
           const msg = `Akses ditolak: akun ${res.user.email} bukan pemilik database (${OWNER_GOOGLE_EMAIL}). Hanya akun pemilik yang dapat menghubungkan spreadsheet utama.`;
           setSheetsError(msg);
           showToast(msg);
           return;
         }
 
+        const adminEmail = res.user.email || OWNER_GOOGLE_EMAIL;
+        adminWelcomedEmailRef.current = adminEmail;
         setGoogleUser(res.user);
         setNeedsAuth(false);
+        setRoleMenuOpen(false);
+        showToast(`Selamat datang, Admin (${adminEmail}). Akses penuh aktif.`);
+
         const draftToSync = authPromptDraft;
         const queuedAction = pendingOutputAction;
         setAuthPromptDraft(null);
@@ -657,7 +714,6 @@ export default function App() {
             currentYear;
           setSelectedYear(tabToLoad);
           await loadYearRows(summary.spreadsheetId, tabToLoad, res.accessToken);
-          showToast('Berhasil terhubung sebagai Pemilik Spreadsheet');
         }
       }
     } catch (err) {
@@ -672,13 +728,15 @@ export default function App() {
 
   const handleGoogleLogout = async () => {
     await logoutGoogle();
+    adminWelcomedEmailRef.current = null;
+    setRoleMenuOpen(false);
     setGoogleUser(null);
     setNeedsAuth(true);
     if (!bridgeConnected) {
       setSpreadsheet(null);
       setSheetRows([]);
     }
-    showToast('Akun Google diputuskan');
+    showToast('Sesi Admin diputuskan (Kembali ke Mode: Operator)');
   };
 
   const handleAutoSetupSpreadsheet = async () => {
@@ -1405,31 +1463,31 @@ export default function App() {
     surat.kriteria === 'sendiri' ? 1 : surat.kriteria === 'tiga_orang' ? 2 : 4;
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#F4F6F5] text-slate-900">
+    <div className="min-h-screen flex flex-col st-app">
       {/* TOP BAR CONTRACT: 3 zones on desktop, 2-row accessible nav on non-desktop (< lg) */}
-      <header className="no-print sticky top-0 z-30 bg-white border-b border-slate-200 px-3 sm:px-6 py-2 lg:py-0 lg:h-14 flex flex-wrap lg:flex-nowrap items-center justify-between gap-x-4 gap-y-1.5 lg:gap-8">
+      <header className="no-print sticky top-0 z-30 st-surface border-b px-3 sm:px-6 py-2 lg:py-0 lg:h-14 flex flex-wrap lg:flex-nowrap items-center justify-between gap-x-3 gap-y-1.5 lg:gap-6">
         <a
           href="#editor"
           onClick={(e) => {
             e.preventDefault();
             setActiveTab('editor');
           }}
-          className="order-1 font-display text-sm sm:text-base font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0"
+          className="order-1 font-display text-sm sm:text-base font-bold tracking-tight st-text-primary whitespace-nowrap shrink-0"
         >
           SiTugas Kemenag Jember
         </a>
 
         <nav
           aria-label="Menu utama"
-          className="order-3 lg:order-2 w-full lg:w-auto lg:min-w-0 border-t border-slate-100 lg:border-t-0 pt-1.5 lg:pt-0 flex items-center justify-between sm:justify-start gap-2.5 sm:gap-5 lg:gap-6 text-[11px] sm:text-xs lg:text-sm font-medium overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="order-3 lg:order-2 w-full lg:w-auto lg:min-w-0 border-t border-slate-100 night:border-[#e4d5b3] dark:border-slate-700/70 lg:border-t-0 pt-1.5 lg:pt-0 flex items-center justify-between sm:justify-start gap-2.5 sm:gap-5 lg:gap-6 text-[11px] sm:text-xs lg:text-sm font-medium overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           <button
             type="button"
             onClick={() => setActiveTab('editor')}
             className={`py-1.5 lg:py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
               activeTab === 'editor'
-                ? 'text-[#0B5D3B] border-[#0B5D3B]'
-                : 'text-slate-600 border-transparent hover:text-slate-900'
+                ? 'text-[#0B5D3B] dark:text-emerald-400 border-[#0B5D3B] dark:border-emerald-400'
+                : 'st-text-secondary border-transparent hover:text-slate-900 night:hover:text-[#3b3228] dark:hover:text-slate-100'
             }`}
           >
             Editor Surat
@@ -1439,8 +1497,8 @@ export default function App() {
             onClick={() => setActiveTab('pegawai')}
             className={`py-1.5 lg:py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
               activeTab === 'pegawai'
-                ? 'text-[#0B5D3B] border-[#0B5D3B]'
-                : 'text-slate-600 border-transparent hover:text-slate-900'
+                ? 'text-[#0B5D3B] dark:text-emerald-400 border-[#0B5D3B] dark:border-emerald-400'
+                : 'st-text-secondary border-transparent hover:text-slate-900 night:hover:text-[#3b3228] dark:hover:text-slate-100'
             }`}
           >
             Data Pegawai ({directory.length.toLocaleString('id-ID')})
@@ -1450,8 +1508,8 @@ export default function App() {
             onClick={() => setActiveTab('sheets')}
             className={`py-1.5 lg:py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
               activeTab === 'sheets'
-                ? 'text-[#0B5D3B] border-[#0B5D3B]'
-                : 'text-slate-600 border-transparent hover:text-slate-900'
+                ? 'text-[#0B5D3B] dark:text-emerald-400 border-[#0B5D3B] dark:border-emerald-400'
+                : 'st-text-secondary border-transparent hover:text-slate-900 night:hover:text-[#3b3228] dark:hover:text-slate-100'
             }`}
           >
             Tracking Sheets
@@ -1461,30 +1519,140 @@ export default function App() {
             onClick={() => setActiveTab('arsip')}
             className={`py-1.5 lg:py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
               activeTab === 'arsip'
-                ? 'text-[#0B5D3B] border-[#0B5D3B]'
-                : 'text-slate-600 border-transparent hover:text-slate-900'
+                ? 'text-[#0B5D3B] dark:text-emerald-400 border-[#0B5D3B] dark:border-emerald-400'
+                : 'st-text-secondary border-transparent hover:text-slate-900 night:hover:text-[#3b3228] dark:hover:text-slate-100'
             }`}
           >
             Daftar Draft ({arsipList.length})
           </button>
         </nav>
 
-        <div className="order-2 lg:order-3 flex items-center shrink-0">
+        <div className="order-2 lg:order-3 flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <ThemeSwitcher themeMode={themeMode} onChange={setThemeMode} />
+
+          {/* INDIKATOR ROLE PENGGUNA (OPERATOR VS ADMIN) */}
+          <div className="relative" ref={roleMenuRef}>
+            <button
+              type="button"
+              onClick={() => setRoleMenuOpen((open) => !open)}
+              aria-expanded={roleMenuOpen}
+              aria-haspopup="dialog"
+              title={
+                isAdminMode
+                  ? `Mode: Admin (${googleUser?.email || OWNER_GOOGLE_EMAIL}) — Akses penuh aktif`
+                  : 'Akses Operator — Siap membuat & mencatat Surat Tugas'
+              }
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
+                isAdminMode
+                  ? 'bg-amber-50 night:bg-amber-200/60 dark:bg-amber-950/60 text-amber-900 night:text-[#4e340b] dark:text-amber-300 border-amber-300 dark:border-amber-700 font-semibold hover:bg-amber-100 night:hover:bg-amber-200/80 dark:hover:bg-amber-950/80'
+                  : 'bg-sky-50 night:bg-emerald-900/15 dark:bg-sky-950/50 text-sky-800 night:text-[#0B5D3B] dark:text-sky-300 border-sky-200 night:border-emerald-700/35 dark:border-sky-800 font-medium hover:bg-sky-100 night:hover:bg-emerald-900/25 dark:hover:bg-sky-950/70'
+              }`}
+            >
+              {isAdminMode ? (
+                <Crown className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+              ) : (
+                <UserIcon className="w-3.5 h-3.5 shrink-0" />
+              )}
+              <span className="hidden md:inline">
+                {isAdminMode ? 'Mode: Admin' : 'Mode: Operator'}
+              </span>
+              <span className="md:hidden">
+                {isAdminMode ? 'Admin' : 'Operator'}
+              </span>
+            </button>
+
+            {roleMenuOpen && (
+              <div
+                role="dialog"
+                aria-label="Status peran pengguna"
+                className="absolute right-0 mt-2 w-72 st-surface border rounded-xl shadow-xl p-3.5 z-50 space-y-3"
+              >
+                <div className="flex items-start gap-2.5">
+                  <div
+                    className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                      isAdminMode
+                        ? 'bg-amber-100 night:bg-amber-200/70 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300'
+                        : 'bg-sky-100 night:bg-emerald-900/20 dark:bg-sky-950/70 text-sky-700 night:text-[#0B5D3B] dark:text-sky-300'
+                    }`}
+                  >
+                    {isAdminMode ? (
+                      <Crown className="w-4 h-4" />
+                    ) : (
+                      <UserIcon className="w-4 h-4" />
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold st-text-primary flex items-center gap-1.5">
+                      <span>{isAdminMode ? 'Mode: Admin' : 'Mode: Operator'}</span>
+                      {isAdminMode && (
+                        <ShieldCheck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                      )}
+                    </div>
+                    <p className="text-[11px] st-text-muted mt-0.5 leading-relaxed">
+                      {isAdminMode
+                        ? `${googleUser?.email || OWNER_GOOGLE_EMAIL} — Akses penuh aktif (Proteksi & Jembatan Pemilik, Spreadsheet, dan Buka Kunci Sistem).`
+                        : 'Akses Operator — Siap membuat & mencatat Surat Tugas ke Worksheet.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t st-border space-y-2">
+                  {isAdminMode ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleGoogleLogout()}
+                      className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-red-700 dark:text-red-300 bg-red-50 night:bg-red-100/70 dark:bg-red-950/50 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-100 dark:hover:bg-red-950/70 transition-colors"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      Keluar Mode Admin
+                    </button>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      <GoogleSignInButton
+                        onClick={() => void handleGoogleLogin()}
+                        disabled={isGoogleConnecting}
+                        label={
+                          isGoogleConnecting
+                            ? 'Menghubungkan...'
+                            : 'Masuk Admin (Google)'
+                        }
+                      />
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRoleMenuOpen(false);
+                      setActiveTab('sheets');
+                    }}
+                    className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium st-text-secondary st-surface-muted border rounded-lg hover:opacity-90 transition-colors"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-[#0B5D3B] dark:text-emerald-400" />
+                    Buka Tracking Sheets
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           <button
             type="button"
             disabled={isSyncingSheets}
             onClick={() => void handlePrintPdf()}
-            className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
           >
             <Printer className="w-3.5 h-3.5" />
-            {isSyncingSheets ? 'Menyimpan...' : 'Cetak / PDF'}
+            <span className="hidden sm:inline">
+              {isSyncingSheets ? 'Menyimpan...' : 'Cetak / PDF'}
+            </span>
           </button>
         </div>
       </header>
 
       {/* TOAST FEEDBACK */}
       {toastMessage && (
-        <div className="no-print fixed bottom-5 right-5 z-50 flex items-center gap-2 px-4 py-2.5 bg-slate-900 text-white text-xs font-medium rounded-lg shadow-lg">
+        <div className="no-print fixed bottom-5 right-5 z-50 flex items-center gap-2 px-4 py-2.5 bg-slate-900 night:bg-[#3b3228] dark:bg-slate-800 dark:border dark:border-slate-700 text-white text-xs font-medium rounded-lg shadow-lg max-w-md">
           <Check className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>{toastMessage}</span>
         </div>
@@ -1651,14 +1819,14 @@ export default function App() {
         }`}
       >
         {/* MOBILE PANE SWITCHER */}
-        <div className="no-print lg:hidden bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-2">
+        <div className="no-print lg:hidden st-surface border-b px-4 py-2 flex items-center gap-2">
           <button
             type="button"
             onClick={() => setMobilePane('form')}
             className={`flex-1 inline-flex items-center justify-center gap-2 py-2 text-xs font-semibold rounded-lg transition-colors ${
               mobilePane === 'form'
                 ? 'bg-[#0B5D3B] text-white'
-                : 'bg-slate-100 text-slate-700'
+                : 'st-surface-muted st-text-secondary'
             }`}
           >
             <FilePenLine className="w-3.5 h-3.5" />
@@ -1670,7 +1838,7 @@ export default function App() {
             className={`flex-1 inline-flex items-center justify-center gap-2 py-2 text-xs font-semibold rounded-lg transition-colors ${
               mobilePane === 'preview'
                 ? 'bg-[#0B5D3B] text-white'
-                : 'bg-slate-100 text-slate-700'
+                : 'st-surface-muted st-text-secondary'
             }`}
           >
             <Eye className="w-3.5 h-3.5" />
@@ -1680,7 +1848,7 @@ export default function App() {
 
         {/* LEFT PANE: FORM STUDIO */}
         <section
-          className={`no-print bg-white border-r border-slate-200 lg:h-[calc(100vh-3.5rem)] lg:overflow-y-auto ${
+          className={`no-print st-surface border-r lg:h-[calc(100vh-3.5rem)] lg:overflow-y-auto ${
             mobilePane === 'form' ? 'block' : 'hidden lg:block'
           }`}
         >
@@ -1688,6 +1856,8 @@ export default function App() {
             {/* 0. DETEKSI OTOMATIS DARI FILE PDF DASAR */}
             <DasarPdfUploader
               directory={directory}
+              isAdminMode={isAdminMode}
+              onRequestAdminSignIn={() => void handleGoogleLogin()}
               onApplyParsedResult={handleApplyParsedPdf}
               onOpenDirectoryMulti={() => {
                 setDirTargetIndex(null);
@@ -1696,24 +1866,24 @@ export default function App() {
               }}
             />
 
-            <hr className="border-slate-200" />
+            <hr className="st-border" />
 
             {/* 1. KRITERIA KEBERANGKATAN */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-semibold text-slate-900">
+                <label className="text-xs font-semibold st-text-primary">
                   1. Kriteria Keberangkatan
                 </label>
                 <button
                   type="button"
                   onClick={handleResetBlank}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-900 transition-colors"
+                  className="inline-flex items-center gap-1 text-xs font-medium st-text-muted hover:text-slate-900 night:hover:text-[#3b3228] dark:hover:text-slate-100 transition-colors"
                 >
                   <RotateCcw className="w-3 h-3" />
                   Kosongkan
                 </button>
               </div>
-              <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-lg border border-slate-200/80">
+              <div className="grid grid-cols-3 gap-1 p-1 st-surface-muted rounded-lg border">
                 {(
                   [
                     ['sendiri', 'Sendiri (1)'],
@@ -1727,15 +1897,15 @@ export default function App() {
                     onClick={() => handleKriteriaChange(key)}
                     className={`py-2 px-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
                       surat.kriteria === key
-                        ? 'bg-white text-[#0B5D3B] shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
+                        ? 'st-surface text-[#0B5D3B] dark:text-emerald-400 shadow-xs'
+                        : 'st-text-secondary hover:text-slate-900 night:hover:text-[#3b3228] dark:hover:text-slate-100'
                     }`}
                   >
                     {label}
                   </button>
                 ))}
               </div>
-              <p className="text-xs text-slate-500 mt-2">
+              <p className="text-xs st-text-muted mt-2">
                 {surat.kriteria === 'sendiri' &&
                   'Format 1 pegawai langsung di halaman utama tanpa nomor urut.'}
                 {surat.kriteria === 'tiga_orang' &&
@@ -1745,15 +1915,15 @@ export default function App() {
               </p>
             </div>
 
-            <hr className="border-slate-200" />
+            <hr className="st-border" />
 
             {/* 2. DASAR SURAT TUGAS */}
             <div className="space-y-3">
-              <h2 className="text-xs font-semibold text-slate-900">
+              <h2 className="text-xs font-semibold st-text-primary">
                 2. Dasar Surat Tugas
               </h2>
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
+                <label className="block text-xs font-medium st-text-secondary mb-1">
                   Asal / Sumber Dasar Surat
                 </label>
                 <input
@@ -1764,7 +1934,7 @@ export default function App() {
                     setSurat((prev) => ({ ...prev, dasarAsal: e.target.value }))
                   }
                   placeholder="Contoh: Surat dari Kepala Kanwil Kemenag Prov. Jawa Timur"
-                  className="w-full px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                  className="w-full px-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                 />
                 <datalist id="dasar-asal-presets">
                   {DASAR_ASAL_PRESETS.map((preset) => (
@@ -1775,7 +1945,7 @@ export default function App() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                  <label className="block text-xs font-medium st-text-secondary mb-1">
                     Nomor Surat Dasar
                   </label>
                   <input
@@ -1785,11 +1955,11 @@ export default function App() {
                       setSurat((prev) => ({ ...prev, dasarNomor: e.target.value }))
                     }
                     placeholder="Contoh: 1134/Kw.13.02/PP.02.3/11/2026"
-                    className="w-full px-3 py-2 text-sm font-mono-tabular text-slate-900 placeholder:text-slate-400 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                    className="w-full px-3 py-2 text-sm font-mono-tabular st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                  <label className="block text-xs font-medium st-text-secondary mb-1">
                     Tanggal Surat Dasar
                   </label>
                   <input
@@ -1798,22 +1968,22 @@ export default function App() {
                     onChange={(e) =>
                       setSurat((prev) => ({ ...prev, dasarTanggal: e.target.value }))
                     }
-                    className="w-full px-3 py-2 text-sm font-mono-tabular text-slate-900 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                    className="w-full px-3 py-2 text-sm font-mono-tabular st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                   />
                 </div>
               </div>
             </div>
 
-            <hr className="border-slate-200" />
+            <hr className="st-border" />
 
             {/* 3. KEGIATAN, TUJUAN & WAKTU */}
             <div className="space-y-3">
-              <h2 className="text-xs font-semibold text-slate-900">
+              <h2 className="text-xs font-semibold st-text-primary">
                 3. Kegiatan, Lokasi Tujuan & Tanggal Pelaksanaan
               </h2>
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
+                <label className="block text-xs font-medium st-text-secondary mb-1">
                   Nama / Perihal Kegiatan (untuk Menimbang & Untuk)
                 </label>
                 <textarea
@@ -1823,9 +1993,9 @@ export default function App() {
                     setSurat((prev) => ({ ...prev, namaKegiatan: e.target.value }))
                   }
                   placeholder="Contoh: kegiatan Koordinasi dan Sharing Program Bimbingan Masyarakat Islam"
-                  className="w-full px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                  className="w-full px-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                 />
-                <label className="inline-flex items-center gap-2 mt-1.5 text-xs text-slate-600 cursor-pointer">
+                <label className="inline-flex items-center gap-2 mt-1.5 text-xs st-text-secondary cursor-pointer">
                   <input
                     type="checkbox"
                     checked={surat.gunakanMenimbangCustom}
@@ -1835,7 +2005,7 @@ export default function App() {
                         gunakanMenimbangCustom: e.target.checked,
                       }))
                     }
-                    className="rounded border-slate-300 text-[#0B5D3B] focus:ring-[#0B5D3B]"
+                    className="rounded border-slate-300 night:border-[#d3c096] dark:border-slate-600 text-[#0B5D3B] focus:ring-[#0B5D3B]"
                   />
                   Ubah redaksi lengkap Menimbang huruf a secara manual
                 </label>
@@ -1850,13 +2020,13 @@ export default function App() {
                       }))
                     }
                     placeholder="Contoh: Bahwa dalam rangka menghadiri ..., maka Aparatur Sipil Negara dibawah ini dipandang mampu..."
-                    className="w-full mt-2 px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                    className="w-full mt-2 px-3 py-2 text-xs st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                   />
                 )}
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
+                <label className="block text-xs font-medium st-text-secondary mb-1">
                   Lokasi Tujuan
                 </label>
                 <input
@@ -1866,13 +2036,13 @@ export default function App() {
                     setSurat((prev) => ({ ...prev, lokasiTujuan: e.target.value }))
                   }
                   placeholder="Contoh: Kantor Kementerian Agama Kabupaten Lumajang"
-                  className="w-full px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                  className="w-full px-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                 />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                  <label className="block text-xs font-medium st-text-secondary mb-1">
                     Tanggal Mulai Pelaksanaan
                   </label>
                   <input
@@ -1887,11 +2057,11 @@ export default function App() {
                           prev.tanggalSelesai < val ? val : prev.tanggalSelesai,
                       }));
                     }}
-                    className="w-full px-3 py-2 text-sm font-mono-tabular border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                    className="w-full px-3 py-2 text-sm font-mono-tabular st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                  <label className="block text-xs font-medium st-text-secondary mb-1">
                     Tanggal Selesai Pelaksanaan
                   </label>
                   <input
@@ -1904,19 +2074,19 @@ export default function App() {
                         tanggalSelesai: e.target.value,
                       }))
                     }
-                    className="w-full px-3 py-2 text-sm font-mono-tabular border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                    className="w-full px-3 py-2 text-sm font-mono-tabular st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                   />
                 </div>
               </div>
             </div>
 
-            <hr className="border-slate-200" />
+            <hr className="st-border" />
 
             {/* 4. DAFTAR PEGAWAI YANG DITUGASKAN */}
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <h2 className="text-xs font-semibold text-slate-900">
+                  <h2 className="text-xs font-semibold st-text-primary">
                     4. Data Pegawai ({surat.pegawaiList.length} Orang)
                   </h2>
                 </div>
@@ -1927,7 +2097,7 @@ export default function App() {
                       setDirTargetIndex(surat.kriteria === 'sendiri' ? 0 : null);
                       setDirModalOpen(true);
                     }}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-[#0B5D3B] bg-emerald-50 hover:bg-emerald-100 rounded-md transition-colors whitespace-nowrap shrink-0"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-950/80 rounded-md transition-colors whitespace-nowrap shrink-0"
                   >
                     <Users className="w-3.5 h-3.5" />
                     Pilih dari Direktori
@@ -1936,7 +2106,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={handleAddPegawaiSlot}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors whitespace-nowrap shrink-0"
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium st-text-secondary st-surface-muted hover:opacity-90 rounded-md transition-colors whitespace-nowrap shrink-0"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       Tambah
@@ -1982,10 +2152,10 @@ export default function App() {
                   return (
                     <div
                       key={peg.id}
-                      className="border border-slate-200 rounded-lg p-3.5 bg-slate-50/50 space-y-2.5"
+                      className="border rounded-lg p-3.5 st-surface-muted space-y-2.5"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-semibold text-slate-700 font-mono-tabular">
+                        <span className="text-xs font-semibold st-text-secondary font-mono-tabular">
                           Pegawai {idx + 1}
                         </span>
                         <div className="flex items-center gap-1.5">
@@ -1995,18 +2165,18 @@ export default function App() {
                               setDirTargetIndex(idx);
                               setDirModalOpen(true);
                             }}
-                            className="text-xs font-medium text-[#0B5D3B] hover:underline whitespace-nowrap shrink-0"
+                            className="text-xs font-medium text-[#0B5D3B] dark:text-emerald-400 hover:underline whitespace-nowrap shrink-0"
                           >
                             Isi dari Direktori
                           </button>
-                          <span className="text-slate-300" aria-hidden="true">
+                          <span className="st-text-muted" aria-hidden="true">
                             ·
                           </span>
                           <button
                             type="button"
                             onClick={() => handleSavePegawaiToDirectory(peg)}
                             title="Simpan pegawai ini ke Direktori Pegawai"
-                            className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 whitespace-nowrap shrink-0"
+                            className="inline-flex items-center gap-1 text-xs font-medium st-text-secondary hover:text-slate-900 night:hover:text-[#3b3228] dark:hover:text-slate-100 whitespace-nowrap shrink-0"
                           >
                             <UserCheck className="w-3 h-3" />
                             Simpan
@@ -2015,7 +2185,7 @@ export default function App() {
                             <button
                               type="button"
                               onClick={() => handleRemovePegawaiSlot(idx)}
-                              className="p-1 text-slate-400 hover:text-red-600 rounded transition-colors"
+                              className="p-1 st-text-muted hover:text-red-600 dark:hover:text-red-400 rounded transition-colors"
                               aria-label={`Hapus pegawai ${idx + 1}`}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -2026,7 +2196,7 @@ export default function App() {
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                         <div className="sm:col-span-2">
-                          <label className="block text-[11px] font-medium text-slate-600 mb-0.5">
+                          <label className="block text-[11px] font-medium st-text-secondary mb-0.5">
                             Nama Lengkap & Gelar
                           </label>
                           <input
@@ -2036,11 +2206,11 @@ export default function App() {
                               updatePegawaiField(idx, 'nama', e.target.value)
                             }
                             placeholder={ph.nama}
-                            className="w-full px-2.5 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                            className="w-full px-2.5 py-1.5 text-sm st-input border rounded-md focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                           />
                         </div>
                         <div>
-                          <label className="block text-[11px] font-medium text-slate-600 mb-0.5">
+                          <label className="block text-[11px] font-medium st-text-secondary mb-0.5">
                             NIP / NI PPPK
                           </label>
                           <input
@@ -2050,11 +2220,11 @@ export default function App() {
                               updatePegawaiField(idx, 'nip', e.target.value)
                             }
                             placeholder={ph.nip}
-                            className="w-full px-2.5 py-1.5 text-sm font-mono-tabular text-slate-900 placeholder:text-slate-400 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                            className="w-full px-2.5 py-1.5 text-sm font-mono-tabular st-input border rounded-md focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                           />
                         </div>
                         <div>
-                          <label className="block text-[11px] font-medium text-slate-600 mb-0.5">
+                          <label className="block text-[11px] font-medium st-text-secondary mb-0.5">
                             Pangkat / Golongan
                           </label>
                           <input
@@ -2069,11 +2239,11 @@ export default function App() {
                               )
                             }
                             placeholder={ph.pangkat}
-                            className="w-full px-2.5 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                            className="w-full px-2.5 py-1.5 text-sm st-input border rounded-md focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                           />
                         </div>
                         <div className="sm:col-span-2">
-                          <label className="block text-[11px] font-medium text-slate-600 mb-0.5">
+                          <label className="block text-[11px] font-medium st-text-secondary mb-0.5">
                             Jabatan
                           </label>
                           <input
@@ -2083,7 +2253,7 @@ export default function App() {
                               updatePegawaiField(idx, 'jabatan', e.target.value)
                             }
                             placeholder={ph.jabatan}
-                            className="w-full px-2.5 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                            className="w-full px-2.5 py-1.5 text-sm st-input border rounded-md focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                           />
                         </div>
                       </div>
@@ -2096,7 +2266,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handleAddPegawaiSlot}
-                  className="w-full inline-flex items-center justify-center gap-2 px-3.5 py-2.5 text-xs font-semibold text-[#0B5D3B] bg-emerald-50/80 hover:bg-emerald-100 border border-dashed border-emerald-300 rounded-lg transition-colors whitespace-nowrap shrink-0"
+                  className="w-full inline-flex items-center justify-center gap-2 px-3.5 py-2.5 text-xs font-semibold text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50/80 night:bg-emerald-900/15 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-950/70 border border-dashed border-emerald-300 dark:border-emerald-700 rounded-lg transition-colors whitespace-nowrap shrink-0"
                 >
                   <Plus className="w-4 h-4" />
                   Tambah Pegawai yang Berangkat
@@ -2111,26 +2281,26 @@ export default function App() {
               </datalist>
             </div>
 
-            <hr className="border-slate-200" />
+            <hr className="st-border" />
 
             {/* 5. PENGATURAN PENOMORAN SRIKANDI, KOP & PENANDATANGAN */}
             <div>
               <button
                 type="button"
                 onClick={() => setShowAdvanced((v) => !v)}
-                className="w-full flex items-center justify-between py-1 text-xs font-semibold text-slate-900"
+                className="w-full flex items-center justify-between py-1 text-xs font-semibold st-text-primary"
               >
                 <span>5. Pengaturan Srikandi, Kop Surat & Penandatangan</span>
                 {showAdvanced ? (
-                  <ChevronUp className="w-4 h-4 text-slate-500" />
+                  <ChevronUp className="w-4 h-4 st-text-muted" />
                 ) : (
-                  <ChevronDown className="w-4 h-4 text-slate-500" />
+                  <ChevronDown className="w-4 h-4 st-text-muted" />
                 )}
               </button>
 
               {showAdvanced && (
                 <div className="mt-3 space-y-3 pt-2">
-                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                  <div className="p-3 st-surface-muted border rounded-lg">
                     <label className="flex items-start gap-2.5 cursor-pointer">
                       <input
                         type="checkbox"
@@ -2141,13 +2311,13 @@ export default function App() {
                             modeSrikandi: e.target.checked,
                           }))
                         }
-                        className="mt-0.5 rounded border-slate-300 text-[#0B5D3B] focus:ring-[#0B5D3B]"
+                        className="mt-0.5 rounded border-slate-300 night:border-[#d3c096] dark:border-slate-600 text-[#0B5D3B] focus:ring-[#0B5D3B]"
                       />
                       <div>
-                        <div className="text-xs font-semibold text-slate-900">
+                        <div className="text-xs font-semibold st-text-primary">
                           Gunakan Variabel Template Srikandi
                         </div>
-                        <div className="text-[11px] text-slate-600 mt-0.5">
+                        <div className="text-[11px] st-text-secondary mt-0.5">
                           Menampilkan{' '}
                           <span className="font-mono-tabular">${'{nomor_naskah}'}</span>,{' '}
                           <span className="font-mono-tabular">${'{tanggal_naskah}'}</span>,{' '}
@@ -2162,7 +2332,7 @@ export default function App() {
                   {!surat.modeSrikandi && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs font-medium text-slate-700 mb-1">
+                        <label className="block text-xs font-medium st-text-secondary mb-1">
                           Nomor Surat Tugas
                         </label>
                         <input
@@ -2175,11 +2345,11 @@ export default function App() {
                             }))
                           }
                           placeholder="B-1024/Kk.13.32.01/KP.01/11/2026"
-                          className="w-full px-3 py-2 text-xs font-mono-tabular border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                          className="w-full px-3 py-2 text-xs font-mono-tabular st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-slate-700 mb-1">
+                        <label className="block text-xs font-medium st-text-secondary mb-1">
                           Tanggal Surat Tugas
                         </label>
                         <input
@@ -2191,14 +2361,14 @@ export default function App() {
                               tanggalNaskah: e.target.value,
                             }))
                           }
-                          className="w-full px-3 py-2 text-xs font-mono-tabular border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                          className="w-full px-3 py-2 text-xs font-mono-tabular st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                         />
                       </div>
                     </div>
                   )}
 
                   <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                    <label className="block text-xs font-medium st-text-secondary mb-1">
                       Varian Kontak Kop Surat
                     </label>
                     <select
@@ -2209,7 +2379,7 @@ export default function App() {
                           kopVarian: e.target.value as KopVarianId,
                         }))
                       }
-                      className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                      className="w-full px-3 py-2 text-xs st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                     >
                       {Object.values(KOP_VARIAN_OPTIONS).map((opt) => (
                         <option key={opt.id} value={opt.id}>
@@ -2221,7 +2391,7 @@ export default function App() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-medium text-slate-700 mb-1">
+                      <label className="block text-xs font-medium st-text-secondary mb-1">
                         Jabatan Penandatangan
                       </label>
                       <input
@@ -2234,11 +2404,11 @@ export default function App() {
                           }))
                         }
                         placeholder="Kepala Kantor"
-                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                        className="w-full px-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-slate-700 mb-1">
+                      <label className="block text-xs font-medium st-text-secondary mb-1">
                         Nama Penandatangan (Non-Srikandi)
                       </label>
                       <input
@@ -2251,7 +2421,7 @@ export default function App() {
                           }))
                         }
                         placeholder="Dr. SANTOSO, S.Ag, M.Pd."
-                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                        className="w-full px-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                       />
                     </div>
                   </div>
@@ -2260,13 +2430,13 @@ export default function App() {
             </div>
 
             {/* EDITOR ACTION FOOTER */}
-            <div className="pt-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2.5">
+            <div className="pt-3 border-t st-border flex flex-wrap items-center justify-between gap-2.5">
               <button
                 type="button"
                 onClick={handleSaveToDraft}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold st-text-primary st-surface border rounded-lg hover:bg-slate-50 night:hover:bg-[#efe3c4] dark:hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0"
               >
-                <Save className="w-3.5 h-3.5 text-[#0B5D3B]" />
+                <Save className="w-3.5 h-3.5 text-[#0B5D3B] dark:text-emerald-400" />
                 Simpan ke Draft
               </button>
               <button
@@ -2284,41 +2454,41 @@ export default function App() {
 
         {/* RIGHT PANE: LIVE A4 PREVIEW CANVAS */}
         <section
-          className={`bg-[#E6EAE8] flex flex-col lg:h-[calc(100vh-3.5rem)] print-only-container ${
+          className={`st-desk flex flex-col lg:h-[calc(100vh-3.5rem)] print-only-container ${
             mobilePane === 'preview' ? 'flex' : 'hidden lg:flex'
           }`}
         >
           {/* WORKSPACE TOOLBAR */}
-          <div className="no-print bg-white/95 backdrop-blur-xs border-b border-slate-200 px-5 py-2.5 flex flex-wrap items-center justify-between gap-3">
+          <div className="no-print st-surface backdrop-blur-xs border-b px-5 py-2.5 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2 overflow-x-auto">
-              <span className="text-xs font-medium text-slate-500 whitespace-nowrap shrink-0">
+              <span className="text-xs font-medium st-text-muted whitespace-nowrap shrink-0">
                 Muat Contoh:
               </span>
               <button
                 type="button"
                 onClick={() => handleLoadSample('sendiri')}
-                className="px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors whitespace-nowrap shrink-0"
+                className="px-2.5 py-1.5 text-xs font-medium st-text-secondary st-surface-muted hover:opacity-90 rounded-md transition-colors whitespace-nowrap shrink-0"
               >
                 1 Orang
               </button>
               <button
                 type="button"
                 onClick={() => handleLoadSample('tiga_orang')}
-                className="px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors whitespace-nowrap shrink-0"
+                className="px-2.5 py-1.5 text-xs font-medium st-text-secondary st-surface-muted hover:opacity-90 rounded-md transition-colors whitespace-nowrap shrink-0"
               >
                 2-3 Orang
               </button>
               <button
                 type="button"
                 onClick={() => handleLoadSample('terlampir')}
-                className="px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors whitespace-nowrap shrink-0"
+                className="px-2.5 py-1.5 text-xs font-medium st-text-secondary st-surface-muted hover:opacity-90 rounded-md transition-colors whitespace-nowrap shrink-0"
               >
                 &gt; 3 Terlampir
               </button>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <div className="hidden sm:flex items-center gap-1 p-0.5 bg-slate-100 rounded-md border border-slate-200">
+              <div className="hidden sm:flex items-center gap-1 p-0.5 st-surface-muted rounded-md border">
                 {[0.7, 0.85, 1].map((z) => (
                   <button
                     key={z}
@@ -2326,8 +2496,8 @@ export default function App() {
                     onClick={() => setZoom(z)}
                     className={`px-2 py-1 text-xs font-mono-tabular rounded transition-colors ${
                       zoom === z
-                        ? 'bg-white text-slate-900 shadow-xs font-medium'
-                        : 'text-slate-600 hover:text-slate-900'
+                        ? 'st-surface st-text-primary shadow-xs font-medium'
+                        : 'st-text-muted hover:text-slate-900 night:hover:text-[#3b3228] dark:hover:text-slate-100'
                     }`}
                   >
                     {Math.round(z * 100)}%
@@ -2338,9 +2508,9 @@ export default function App() {
               <button
                 type="button"
                 onClick={handleSaveToDraft}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium st-text-primary st-surface border rounded-lg hover:bg-slate-50 night:hover:bg-[#efe3c4] dark:hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0"
               >
-                <Save className="w-3.5 h-3.5 text-[#0B5D3B]" />
+                <Save className="w-3.5 h-3.5 text-[#0B5D3B] dark:text-emerald-400" />
                 Simpan ke Draft
               </button>
 
@@ -2348,7 +2518,7 @@ export default function App() {
                 type="button"
                 disabled={isSyncingSheets}
                 onClick={() => void syncDraftToGoogleSheets(surat)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#0B5D3B] bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 border border-emerald-200 night:border-emerald-700/35 dark:border-emerald-800 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-950/75 disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
               >
                 <FileSpreadsheet className="w-3.5 h-3.5" />
                 {isSyncingSheets

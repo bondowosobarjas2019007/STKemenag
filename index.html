@@ -21,8 +21,26 @@
       href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700&family=Public+Sans:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
+    <script>
+      (function () {
+        try {
+          var mode = localStorage.getItem('stkemenag_theme_mode');
+          var root = document.documentElement;
+          root.classList.remove('dark', 'theme-night');
+          if (mode === 'dark') {
+            root.classList.add('dark');
+            root.setAttribute('data-theme', 'dark');
+          } else if (mode === 'night') {
+            root.classList.add('theme-night');
+            root.setAttribute('data-theme', 'night');
+          } else {
+            root.setAttribute('data-theme', 'normal');
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
-  <body class="bg-[#F4F6F5] text-slate-900 antialiased">
+  <body class="antialiased">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

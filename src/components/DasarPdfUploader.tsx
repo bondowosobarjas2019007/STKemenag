@@ -55,6 +55,8 @@ export interface ParsedDasarPdfResult {
 
 interface DasarPdfUploaderProps {
   directory: Pegawai[];
+  isAdminMode?: boolean;
+  onRequestAdminSignIn?: () => void;
   onApplyParsedResult: (result: ParsedDasarPdfResult, fileName: string) => void;
   onOpenDirectoryMulti: () => void;
 }
@@ -85,6 +87,8 @@ const DUK_BY_ID = new Map(INITIAL_PEGAWAI_DIRECTORY.map((d) => [d.id, d]));
 
 export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
   directory,
+  isAdminMode = false,
+  onRequestAdminSignIn,
   onApplyParsedResult,
   onOpenDirectoryMulti,
 }) => {
@@ -786,7 +790,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
   return (
     <div className="space-y-2.5">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold text-slate-900">
+        <span className="text-xs font-semibold st-text-primary">
           Deteksi Otomatis dari File PDF Dasar
         </span>
         {lastSummary && !isLoading && (
@@ -797,7 +801,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
               setActiveFileName(null);
               setErrorMessage(null);
             }}
-            className="text-xs text-slate-400 hover:text-slate-700 inline-flex items-center gap-1"
+            className="text-xs st-text-muted hover:text-slate-700 night:hover:text-[#3b3228] dark:hover:text-slate-200 inline-flex items-center gap-1"
           >
             <X className="w-3 h-3" />
             Tutup info
@@ -828,20 +832,20 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
           }}
           className={`border border-dashed rounded-lg p-3.5 transition-colors ${
             isDragging
-              ? 'border-[#0B5D3B] bg-emerald-50/70'
-              : 'border-slate-300 bg-slate-50/60 hover:border-slate-400'
+              ? 'border-[#0B5D3B] bg-emerald-50/70 night:bg-emerald-900/10 dark:bg-emerald-950/35'
+              : 'border-slate-300 night:border-[#d3c096] dark:border-slate-700 st-surface-muted hover:border-slate-400 night:hover:border-[#b79f72] dark:hover:border-slate-500'
           }`}
         >
           {isInspecting || isLoading ? (
             <div className="flex items-center gap-3 py-1">
-              <Loader2 className="w-4 h-4 text-[#0B5D3B] animate-spin shrink-0" />
+              <Loader2 className="w-4 h-4 text-[#0B5D3B] dark:text-emerald-400 animate-spin shrink-0" />
               <div className="min-w-0">
-                <div className="text-xs font-semibold text-slate-900 truncate">
+                <div className="text-xs font-semibold st-text-primary truncate">
                   {isInspecting
                     ? 'Memeriksa jumlah halaman PDF...'
                     : `Memproses ${activeFileName}...`}
                 </div>
-                <div className="text-[11px] text-slate-500">
+                <div className="text-[11px] st-text-muted">
                   {stageText ||
                     'Membaca nomor surat, kegiatan, jadwal, lokasi, dan pegawai yang berangkat'}
                 </div>
@@ -850,10 +854,10 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
           ) : (
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-xs font-medium text-slate-800">
+                <div className="text-xs font-medium st-text-primary">
                   Unggah PDF Undangan / Nota Dinas / Permohonan
                 </div>
-                <div className="text-[11px] text-slate-500 mt-0.5">
+                <div className="text-[11px] st-text-muted mt-0.5">
                   Otomatis memotong halaman terpilih & mengompres ukuran agar cepat dan aman (&lt; 3,5 MB)
                 </div>
               </div>
@@ -872,16 +876,16 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
       )}
 
       {pendingPdf && !isLoading && (
-        <div className="border border-emerald-300 bg-emerald-50/40 rounded-lg p-3.5 space-y-3">
+        <div className="border border-emerald-300 night:border-emerald-700/40 dark:border-emerald-800/70 bg-emerald-50/40 night:bg-[#f5ecd5] dark:bg-emerald-950/25 rounded-lg p-3.5 space-y-3">
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-start gap-2 min-w-0">
-              <FileText className="w-4 h-4 text-[#0B5D3B] shrink-0 mt-0.5" />
+              <FileText className="w-4 h-4 text-[#0B5D3B] dark:text-emerald-400 shrink-0 mt-0.5" />
               <div className="min-w-0">
-                <div className="text-xs font-semibold text-slate-900 truncate">
+                <div className="text-xs font-semibold st-text-primary truncate">
                   {pendingPdf.fileName}
                 </div>
-                <div className="text-[11px] text-slate-600 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                  <span className="font-semibold text-[#0B5D3B]">
+                <div className="text-[11px] st-text-secondary mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <span className="font-semibold text-[#0B5D3B] dark:text-emerald-400">
                     Total {pendingPdf.totalPages} halaman
                   </span>
                   <span>·</span>
@@ -897,14 +901,14 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                 setPendingPdf(null);
                 setErrorMessage(null);
               }}
-              className="text-slate-400 hover:text-slate-700 p-1 rounded-md"
+              className="st-text-muted hover:text-slate-700 night:hover:text-[#3b3228] dark:hover:text-slate-200 p-1 rounded-md"
               title="Batalkan pilihan file"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
 
-          <p className="text-[11px] text-slate-600 leading-relaxed">
+          <p className="text-[11px] st-text-secondary leading-relaxed">
             PDF memiliki {pendingPdf.totalPages} halaman. Pilih halaman kop surat utama &amp; daftar nama pegawai saja agar ekstraksi lebih cepat dan hemat token.
           </p>
 
@@ -915,7 +919,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
               className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-md border transition-colors ${
                 pendingPdf.selectionMode === 'subset'
                   ? 'bg-[#0B5D3B] text-white border-[#0B5D3B]'
-                  : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                  : 'st-surface st-text-secondary border-slate-300 night:border-[#d3c096] dark:border-slate-600 hover:bg-slate-50 night:hover:bg-[#efe3c4] dark:hover:bg-slate-800'
               }`}
             >
               <Scissors className="w-3.5 h-3.5" />
@@ -927,7 +931,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
               className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-md border transition-colors ${
                 pendingPdf.selectionMode === 'all'
                   ? 'bg-[#0B5D3B] text-white border-[#0B5D3B]'
-                  : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                  : 'st-surface st-text-secondary border-slate-300 night:border-[#d3c096] dark:border-slate-600 hover:bg-slate-50 night:hover:bg-[#efe3c4] dark:hover:bg-slate-800'
               }`}
             >
               <Layers className="w-3.5 h-3.5" />
@@ -936,7 +940,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
           </div>
 
           <div className="space-y-1.5">
-            <label className="block text-[11px] font-semibold text-slate-700">
+            <label className="block text-[11px] font-semibold st-text-secondary">
               Rentang Halaman (contoh: <span className="font-mono-tabular">1, 3-4</span>)
             </label>
             <input
@@ -957,26 +961,26 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                 }
               }}
               placeholder="Contoh: 1, 3-4"
-              className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+              className="w-full px-2.5 py-1.5 text-xs font-mono-tabular st-input border rounded-md focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
             />
           </div>
 
           <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2 text-[11px] text-slate-600">
+            <div className="flex items-center justify-between gap-2 text-[11px] st-text-secondary">
               <span>
                 Pratinjau halaman — centang halaman berisi{' '}
-                <strong className="text-slate-800">kop surat</strong> &amp;{' '}
-                <strong className="text-slate-800">daftar nama pegawai</strong>:
+                <strong className="st-text-primary">kop surat</strong> &amp;{' '}
+                <strong className="st-text-primary">daftar nama pegawai</strong>:
               </span>
               {isRenderingThumbnails && (
-                <span className="inline-flex items-center gap-1 text-[#0B5D3B] font-medium shrink-0">
+                <span className="inline-flex items-center gap-1 text-[#0B5D3B] dark:text-emerald-400 font-medium shrink-0">
                   <Loader2 className="w-3 h-3 animate-spin" />
                   Memuat pratinjau...
                 </span>
               )}
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 max-h-[380px] overflow-y-auto p-2 bg-white border border-slate-200 rounded-md">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 max-h-[380px] overflow-y-auto p-2 st-surface border rounded-md">
               {Array.from({ length: pendingPdf.totalPages }, (_, idx) => {
                 const pageNum = idx + 1;
                 const checked = pendingPdf.selectedPages.includes(pageNum);
@@ -988,11 +992,11 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                     key={pageNum}
                     className={`group flex flex-col rounded-md border-2 overflow-hidden cursor-pointer select-none transition-all ${
                       checked
-                        ? 'border-[#0B5D3B] bg-emerald-50/70 shadow-sm'
-                        : 'border-slate-200 bg-slate-50/70 hover:border-slate-300'
+                        ? 'border-[#0B5D3B] bg-emerald-50/70 night:bg-emerald-900/15 dark:bg-emerald-950/40 shadow-sm'
+                        : 'border-slate-200 night:border-[#e4d5b3] dark:border-slate-700 st-surface-muted hover:border-slate-300 dark:hover:border-slate-500'
                     }`}
                   >
-                    <div className="relative aspect-[3/4] w-full bg-slate-100 border-b border-slate-200 flex items-center justify-center overflow-hidden">
+                    <div className="relative aspect-[3/4] w-full bg-slate-100 night:bg-[#efe3c4] dark:bg-slate-800 border-b st-border flex items-center justify-center overflow-hidden">
                       {thumbUrl ? (
                         <img
                           src={thumbUrl}
@@ -1001,10 +1005,10 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                           loading="lazy"
                         />
                       ) : (
-                        <div className="flex flex-col items-center justify-center gap-1 px-2 text-center text-slate-400">
+                        <div className="flex flex-col items-center justify-center gap-1 px-2 text-center st-text-muted">
                           {isPendingThumb ? (
                             <>
-                              <Loader2 className="w-4 h-4 animate-spin text-[#0B5D3B]" />
+                              <Loader2 className="w-4 h-4 animate-spin text-[#0B5D3B] dark:text-emerald-400" />
                               <span className="text-[10px]">Memuat...</span>
                             </>
                           ) : (
@@ -1024,7 +1028,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                           void handleOpenZoom(pageNum);
                         }}
                         title={`Perbesar halaman ${pageNum}`}
-                        className="absolute top-1.5 right-1.5 p-1 rounded bg-white/90 text-slate-700 border border-slate-300 shadow-sm hover:bg-white hover:text-[#0B5D3B] transition-colors"
+                        className="absolute top-1.5 right-1.5 p-1 rounded bg-white/95 dark:bg-slate-900/90 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 shadow-sm hover:bg-white hover:text-[#0B5D3B] transition-colors"
                       >
                         <ZoomIn className="w-3.5 h-3.5" />
                       </button>
@@ -1037,7 +1041,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                     </div>
 
                     <div className="flex items-center justify-between gap-1.5 px-2 py-1.5 text-[11px]">
-                      <span className="inline-flex items-center gap-1.5 font-mono-tabular font-semibold text-slate-800">
+                      <span className="inline-flex items-center gap-1.5 font-mono-tabular font-semibold st-text-primary">
                         <input
                           type="checkbox"
                           checked={checked}
@@ -1046,7 +1050,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                         />
                         Hal. {pageNum}
                       </span>
-                      <span className="text-[10px] text-slate-500">
+                      <span className="text-[10px] st-text-muted">
                         {checked ? 'Aktif' : 'Lewati'}
                       </span>
                     </div>
@@ -1061,7 +1065,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                   type="button"
                   disabled={isRenderingThumbnails}
                   onClick={handleLoadMoreThumbnails}
-                  className="px-3 py-1 text-[11px] font-medium text-[#0B5D3B] bg-white border border-emerald-300 rounded-md hover:bg-emerald-50 disabled:opacity-50"
+                  className="px-3 py-1 text-[11px] font-medium text-[#0B5D3B] dark:text-emerald-400 st-surface border border-emerald-300 dark:border-emerald-700 rounded-md hover:bg-emerald-50 dark:hover:bg-emerald-950/40 disabled:opacity-50"
                 >
                   Muat Pratinjau Halaman {renderedUpTo + 1}–
                   {Math.min(pendingPdf.totalPages, renderedUpTo + 20)}
@@ -1070,11 +1074,11 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
             )}
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 border-t border-emerald-200/70">
-            <div className="text-[11px] text-slate-600 font-medium">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 border-t border-emerald-200/70 night:border-[#d3c096] dark:border-emerald-800/60">
+            <div className="text-[11px] st-text-secondary font-medium">
               {pendingPdf.selectedPages.length > 0 ? (
                 <span>
-                  <span className="font-mono-tabular font-semibold text-[#0B5D3B]">
+                  <span className="font-mono-tabular font-semibold text-[#0B5D3B] dark:text-emerald-400">
                     {pendingPdf.selectedPages.length}
                   </span>{' '}
                   dari {pendingPdf.totalPages} halaman dipilih
@@ -1083,7 +1087,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                     : ''}
                 </span>
               ) : (
-                <span className="text-amber-700 font-semibold">
+                <span className="text-amber-700 dark:text-amber-400 font-semibold">
                   Pilih minimal 1 halaman untuk diproses
                 </span>
               )}
@@ -1097,7 +1101,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                   setPendingPdf(null);
                   setErrorMessage(null);
                 }}
-                className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-300 rounded-md hover:bg-slate-50 disabled:opacity-50"
+                className="px-3 py-1.5 text-xs font-medium st-text-secondary st-surface border border-slate-300 night:border-[#d3c096] dark:border-slate-600 rounded-md hover:bg-slate-50 night:hover:bg-[#efe3c4] dark:hover:bg-slate-800 disabled:opacity-50"
               >
                 Batal
               </button>
@@ -1123,13 +1127,13 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
       )}
 
       {pendingPdf && isLoading && (
-        <div className="border border-emerald-200 bg-emerald-50/50 rounded-lg p-3.5 flex items-center gap-3">
-          <Loader2 className="w-4 h-4 text-[#0B5D3B] animate-spin shrink-0" />
+        <div className="border border-emerald-200 night:border-emerald-700/40 dark:border-emerald-800/70 bg-emerald-50/50 night:bg-[#f5ecd5] dark:bg-emerald-950/30 rounded-lg p-3.5 flex items-center gap-3">
+          <Loader2 className="w-4 h-4 text-[#0B5D3B] dark:text-emerald-400 animate-spin shrink-0" />
           <div className="min-w-0">
-            <div className="text-xs font-semibold text-slate-900 truncate">
+            <div className="text-xs font-semibold st-text-primary truncate">
               Memproses {activeFileName}...
             </div>
-            <div className="text-[11px] text-slate-600">
+            <div className="text-[11px] st-text-secondary">
               {stageText || 'Memotong halaman terpilih & mengoptimalkan PDF...'}
             </div>
           </div>
@@ -1137,26 +1141,42 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
       )}
 
       {securityLock && (
-        <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg text-xs text-amber-950 space-y-2.5">
+        <div className="p-3 bg-amber-50 night:bg-[#f5ecd5] dark:bg-amber-950/35 border border-amber-300 night:border-amber-600/40 dark:border-amber-700/60 rounded-lg text-xs text-amber-950 dark:text-amber-100 space-y-2.5">
           <div className="flex items-start gap-2">
-            <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+            <ShieldAlert className="w-4 h-4 text-amber-700 dark:text-amber-400 shrink-0 mt-0.5" />
             <div className="min-w-0 flex-1 space-y-1">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-semibold text-amber-950">
+                <span className="font-semibold text-amber-950 night:text-[#3b3228] dark:text-amber-100">
                   Sistem Terkunci Sementara (Auto-Cooldown 10 Menit)
                 </span>
-                <span className="px-2 py-0.5 bg-white border border-amber-300 rounded-md font-mono-tabular text-[11px] font-semibold text-amber-900">
+                <span className="px-2 py-0.5 st-surface border border-amber-300 dark:border-amber-700/70 rounded-md font-mono-tabular text-[11px] font-semibold text-amber-900 night:text-[#3b3228] dark:text-amber-200">
                   Sisa waktu: {formatCooldownTimer(lockRemainingSeconds)}
                 </span>
               </div>
-              <p className="text-[11px] text-amber-900 leading-relaxed">
+              <p className="text-[11px] text-amber-900 night:text-[#4e4234] dark:text-amber-200/90 leading-relaxed">
                 {securityLock.reason}
               </p>
             </div>
           </div>
 
-          <div className="pt-2 border-t border-amber-200/80">
-            {!showAdminUnlockForm ? (
+          <div className="pt-2 border-t border-amber-200/80 dark:border-amber-800/60">
+            {!isAdminMode ? (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[11px] text-amber-900 night:text-[#4e4234] dark:text-amber-200/90">
+                  Sistem dikunci sementara. Masuk sebagai Admin untuk membuka kunci.
+                </span>
+                {onRequestAdminSignIn && (
+                  <button
+                    type="button"
+                    onClick={onRequestAdminSignIn}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-amber-950 night:text-[#3b3228] dark:text-amber-100 st-surface border border-amber-300 dark:border-amber-700 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors shrink-0"
+                  >
+                    <Lock className="w-3 h-3" />
+                    Masuk Admin (Google)
+                  </button>
+                )}
+              </div>
+            ) : !showAdminUnlockForm ? (
               <div className="flex justify-end">
                 <button
                   type="button"
@@ -1164,7 +1184,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                     setShowAdminUnlockForm(true);
                     setAdminUnlockError(null);
                   }}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-amber-900 bg-white border border-amber-300 rounded-md hover:bg-amber-100 transition-colors"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-amber-900 night:text-[#3b3228] dark:text-amber-200 st-surface border border-amber-300 dark:border-amber-700 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
                 >
                   <Lock className="w-3 h-3" />
                   Saya Admin — Buka Kunci Sekarang
@@ -1186,7 +1206,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                     }}
                     placeholder="Masukkan Kode Admin"
                     autoFocus
-                    className="flex-1 px-2.5 py-1.5 text-xs bg-white border border-amber-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/25 focus:border-[#0B5D3B]"
+                    className="flex-1 px-2.5 py-1.5 text-xs st-input border border-amber-300 dark:border-amber-700 rounded-md focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/25 focus:border-[#0B5D3B]"
                   />
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
@@ -1214,14 +1234,14 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                         setAdminUnlockError(null);
                         setAdminKeyInput('');
                       }}
-                      className="px-2.5 py-1.5 text-xs font-medium text-amber-900 bg-white border border-amber-300 rounded-md hover:bg-amber-100 disabled:opacity-50"
+                      className="px-2.5 py-1.5 text-xs font-medium text-amber-900 night:text-[#3b3228] dark:text-amber-200 st-surface border border-amber-300 dark:border-amber-700 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/40 disabled:opacity-50"
                     >
                       Batal
                     </button>
                   </div>
                 </div>
                 {adminUnlockError && (
-                  <p className="text-[11px] font-medium text-red-700">
+                  <p className="text-[11px] font-medium text-red-700 dark:text-red-300">
                     {adminUnlockError}
                   </p>
                 )}
@@ -1232,25 +1252,25 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
       )}
 
       {adminUnlockNotice && (
-        <div className="flex items-center gap-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-[#0B5D3B] font-medium">
+        <div className="flex items-center gap-2 p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-lg text-xs text-[#0B5D3B] dark:text-emerald-300 font-medium">
           <CheckCircle2 className="w-4 h-4 shrink-0" />
           <span>{adminUnlockNotice}</span>
         </div>
       )}
 
       {errorMessage && (
-        <div className="flex items-start gap-2 p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800">
-          <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+        <div className="flex items-start gap-2 p-2.5 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/70 rounded-lg text-xs text-red-800 dark:text-red-200">
+          <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
           <span>{errorMessage}</span>
         </div>
       )}
 
       {lastSummary && !isLoading && (
-        <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-lg space-y-2">
+        <div className="p-3 bg-emerald-50/70 night:bg-[#f5ecd5] dark:bg-emerald-950/30 border border-emerald-200 night:border-emerald-700/40 dark:border-emerald-800/70 rounded-lg space-y-2">
           <div className="flex items-start gap-2">
-            <CheckCircle2 className="w-4 h-4 text-[#0B5D3B] shrink-0 mt-0.5" />
+            <CheckCircle2 className="w-4 h-4 text-[#0B5D3B] dark:text-emerald-400 shrink-0 mt-0.5" />
             <div className="min-w-0 flex-1">
-              <div className="text-xs font-semibold text-slate-900 truncate">
+              <div className="text-xs font-semibold st-text-primary truncate">
                 {lastSummary.fileName} ·{' '}
                 <span className="font-mono-tabular">
                   {lastSummary.count > 0
@@ -1258,28 +1278,28 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                     : 'Perlu pilih tim manual'}
                 </span>
               </div>
-              <div className="mt-1 inline-flex flex-wrap items-center gap-1.5 px-2 py-0.5 bg-white border border-emerald-200 rounded-md text-[11px] font-mono-tabular text-slate-700">
+              <div className="mt-1 inline-flex flex-wrap items-center gap-1.5 px-2 py-0.5 st-surface border border-emerald-200 dark:border-emerald-800 rounded-md text-[11px] font-mono-tabular st-text-secondary">
                 {lastSummary.fromCache ? (
-                  <span className="inline-flex items-center gap-1 text-[#0B5D3B] font-semibold">
+                  <span className="inline-flex items-center gap-1 text-[#0B5D3B] dark:text-emerald-400 font-semibold">
                     <Database className="w-3 h-3" />
                     Cache SHA-256 (0 token)
                   </span>
                 ) : lastSummary.extractionSource === 'text' ? (
                   <span>
                     {formatFileSize(lastSummary.originalBytes)} →{' '}
-                    <strong className="text-[#0B5D3B]">
+                    <strong className="text-[#0B5D3B] dark:text-emerald-400">
                       Teks Digital ({formatFileSize(lastSummary.finalBytes)})
                     </strong>
                   </span>
                 ) : (
                   <span>
                     {formatFileSize(lastSummary.originalBytes)} →{' '}
-                    <strong className="text-[#0B5D3B]">
+                    <strong className="text-[#0B5D3B] dark:text-emerald-400">
                       {formatFileSize(lastSummary.finalBytes)}
                     </strong>
                   </span>
                 )}
-                <span className="text-slate-400">·</span>
+                <span className="st-text-muted">·</span>
                 <span>
                   {lastSummary.selectedCount} halaman dipilih
                   {lastSummary.selectedCount < lastSummary.totalPages
@@ -1288,12 +1308,12 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                 </span>
                 {lastSummary.modelUsed && (
                   <>
-                    <span className="text-slate-400">·</span>
-                    <span className="text-slate-600">{lastSummary.modelUsed}</span>
+                    <span className="st-text-muted">·</span>
+                    <span className="st-text-muted">{lastSummary.modelUsed}</span>
                   </>
                 )}
               </div>
-              <div className="text-[11px] font-medium text-[#0B5D3B] mt-1">
+              <div className="text-[11px] font-medium text-[#0B5D3B] dark:text-emerald-400 mt-1">
                 Kriteria otomatis:{' '}
                 {lastSummary.kriteria === 'sendiri'
                   ? 'Sendiri (1 Orang)'
@@ -1302,7 +1322,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                     : '> 3 Orang (Terlampir)'}
                 {lastSummary.dasarAsal ? ` · ${lastSummary.dasarAsal}` : ''}
               </div>
-              <p className="text-[11px] text-slate-700 mt-0.5 leading-relaxed">
+              <p className="text-[11px] st-text-secondary mt-0.5 leading-relaxed">
                 {lastSummary.catatan}
               </p>
             </div>
@@ -1312,7 +1332,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
               <button
                 type="button"
                 onClick={onOpenDirectoryMulti}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#0B5D3B] bg-white border border-emerald-300 rounded-md hover:bg-emerald-50 transition-colors whitespace-nowrap shrink-0"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#0B5D3B] dark:text-emerald-400 st-surface border border-emerald-300 dark:border-emerald-700 rounded-md hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap shrink-0"
               >
                 <Users className="w-3.5 h-3.5" />
                 Pilih Tim dari Direktori
@@ -1334,9 +1354,9 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                     }
                   )
                 }
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 hover:text-[#0B5D3B] hover:border-emerald-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap shrink-0"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium st-text-secondary st-surface border border-slate-300 night:border-[#d3c096] dark:border-slate-600 rounded-md hover:bg-slate-50 night:hover:bg-[#efe3c4] dark:hover:bg-slate-800 hover:text-[#0B5D3B] hover:border-emerald-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap shrink-0"
               >
-                <Sparkles className="w-3.5 h-3.5 text-[#0B5D3B]" />
+                <Sparkles className="w-3.5 h-3.5 text-[#0B5D3B] dark:text-emerald-400" />
                 Ekstrak Ulang Mode Teliti
               </button>
             )}
@@ -1349,20 +1369,20 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
           onClick={() => setZoomPreview(null)}
         >
           <div
-            className="bg-white rounded-lg border border-slate-200 shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden"
+            className="st-surface rounded-lg border shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-slate-200 bg-slate-50">
+            <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b st-border st-surface-muted">
               <div className="min-w-0">
-                <div className="text-xs font-semibold text-slate-900">
+                <div className="text-xs font-semibold st-text-primary">
                   Pratinjau Halaman {zoomPreview.pageNum} dari {pendingPdf.totalPages}
                 </div>
-                <div className="text-[11px] text-slate-500 truncate">
+                <div className="text-[11px] st-text-muted truncate">
                   {pendingPdf.fileName}
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <label className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-md border border-slate-300 bg-white cursor-pointer select-none">
+                <label className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-md border st-border st-surface st-text-primary cursor-pointer select-none">
                   <input
                     type="checkbox"
                     checked={pendingPdf.selectedPages.includes(zoomPreview.pageNum)}
@@ -1374,7 +1394,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                 <button
                   type="button"
                   onClick={() => setZoomPreview(null)}
-                  className="p-1.5 rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-200/70"
+                  className="p-1.5 rounded-md st-text-muted hover:text-slate-800 dark:hover:text-slate-100 hover:bg-slate-200/70 dark:hover:bg-slate-700/60"
                   title="Tutup pratinjau"
                 >
                   <X className="w-4 h-4" />
@@ -1382,7 +1402,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
               </div>
             </div>
 
-            <div className="flex-1 overflow-auto bg-slate-100 p-3 flex items-start justify-center">
+            <div className="flex-1 overflow-auto st-desk p-3 flex items-start justify-center">
               {zoomPreview.dataUrl ? (
                 <div className="relative">
                   <img
@@ -1391,15 +1411,15 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                     className="max-w-full h-auto bg-white shadow border border-slate-200 rounded"
                   />
                   {zoomPreview.isLoading && (
-                    <div className="mt-2 flex items-center justify-center gap-1.5 text-[11px] text-slate-600">
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-[#0B5D3B]" />
+                    <div className="mt-2 flex items-center justify-center gap-1.5 text-[11px] st-text-secondary">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-[#0B5D3B] dark:text-emerald-400" />
                       Meningkatkan resolusi pratinjau...
                     </div>
                   )}
                 </div>
               ) : (
-                <div className="py-12 flex flex-col items-center gap-2 text-slate-500 text-xs">
-                  <Loader2 className="w-5 h-5 animate-spin text-[#0B5D3B]" />
+                <div className="py-12 flex flex-col items-center gap-2 st-text-muted text-xs">
+                  <Loader2 className="w-5 h-5 animate-spin text-[#0B5D3B] dark:text-emerald-400" />
                   <span>Memuat pratinjau halaman {zoomPreview.pageNum}...</span>
                 </div>
               )}

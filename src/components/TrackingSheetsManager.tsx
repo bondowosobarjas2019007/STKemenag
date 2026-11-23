@@ -112,7 +112,8 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
     );
   }, [spreadsheet]);
 
-  const canViewTrackingData = bridgeConnected || (isOwner && !needsAuth);
+  const isAdminMode = isOwner && !needsAuth;
+  const canViewTrackingData = bridgeConnected || isAdminMode;
 
   const handleCopyAppsScript = async () => {
     const code = generateOwnerAppsScriptCode(OWNER_GOOGLE_EMAIL);
@@ -130,17 +131,17 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
       {/* HEADER */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">
+          <h1 className="text-xl font-semibold st-text-primary">
             Tracking Database Google Sheets
           </h1>
-          <p className="text-sm text-slate-600 mt-1">
+          <p className="text-sm st-text-secondary mt-1">
             Database terpusat akun pemilik (
-            <span className="font-mono-tabular font-medium text-slate-800">
+            <span className="font-mono-tabular font-medium st-text-primary">
               {OWNER_GOOGLE_EMAIL}
             </span>
             ). Seluruh Surat Tugas wajib tercatat dan otomatis dikelompokkan per sheet tahun (
-            <span className="font-mono-tabular font-medium text-slate-800">2026</span>,{' '}
-            <span className="font-mono-tabular font-medium text-slate-800">2027</span>).
+            <span className="font-mono-tabular font-medium st-text-primary">2026</span>,{' '}
+            <span className="font-mono-tabular font-medium st-text-primary">2027</span>).
           </p>
         </div>
 
@@ -149,26 +150,26 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
             <GoogleSignInButton
               onClick={onGoogleLogin}
               disabled={isConnecting}
-              label={isConnecting ? 'Menghubungkan...' : 'Masuk Pemilik (Google)'}
+              label={isConnecting ? 'Menghubungkan...' : 'Masuk Admin (Google)'}
             />
           ) : (
-            <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-lg px-3.5 py-2">
+            <div className="flex items-center gap-3 st-surface border rounded-lg px-3.5 py-2">
               <div className="text-xs">
-                <div className="flex items-center gap-1.5 font-semibold text-slate-900">
+                <div className="flex items-center gap-1.5 font-semibold st-text-primary">
                   <span>{googleUser.displayName || 'Akun Google'}</span>
                   {isOwner && (
-                    <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-100 text-emerald-800 rounded">
-                      Pemilik
+                    <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-amber-100 night:bg-amber-200/70 dark:bg-amber-900/50 text-amber-900 dark:text-amber-200 rounded">
+                      Admin / Pemilik
                     </span>
                   )}
                 </div>
-                <div className="text-slate-500">{googleUser.email}</div>
+                <div className="st-text-muted">{googleUser.email}</div>
               </div>
               <button
                 type="button"
                 onClick={onGoogleLogout}
                 title="Keluar dari akun Google"
-                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                className="p-1.5 st-text-muted hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-md transition-colors"
                 aria-label="Keluar akun Google"
               >
                 <LogOut className="w-4 h-4" />
@@ -179,41 +180,41 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
       </div>
 
       {/* CENTRALIZED SECURITY STATUS BANNER */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="st-surface border rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-start gap-3">
           <div
             className={`p-2 rounded-lg shrink-0 ${
-              bridgeConnected || isOwner
-                ? 'bg-emerald-50 text-[#0B5D3B]'
-                : 'bg-amber-50 text-amber-700'
+              bridgeConnected || isAdminMode
+                ? 'bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 text-[#0B5D3B] dark:text-emerald-400'
+                : 'bg-amber-50 night:bg-amber-900/15 dark:bg-amber-950/50 text-amber-700 dark:text-amber-400'
             }`}
           >
             <ShieldCheck className="w-5 h-5" />
           </div>
           <div className="text-xs space-y-0.5">
-            <div className="font-semibold text-slate-900">
+            <div className="font-semibold st-text-primary">
               {bridgeConnected
-                ? 'Mode Terpusat Aktif — Orang Lain Dapat Melihat & Menyimpan Hanya Lewat Aplikasi'
-                : isOwner && !needsAuth
-                  ? 'Terhubung sebagai Pemilik Spreadsheet (Mode Langsung)'
-                  : 'Menunggu Koneksi Pemilik atau Jembatan Aplikasi'}
+                ? 'Mode Terpusat Aktif — Operator Dapat Melihat & Menyimpan Hanya Lewat Aplikasi'
+                : isAdminMode
+                  ? 'Terhubung sebagai Admin / Pemilik Spreadsheet (Mode Langsung)'
+                  : 'Menunggu Koneksi Admin atau Jembatan Aplikasi'}
             </div>
-            <p className="text-slate-600 leading-relaxed">
+            <p className="st-text-secondary leading-relaxed">
               {bridgeConnected
                 ? `Seluruh pengajuan Surat Tugas otomatis disimpan ke spreadsheet milik ${OWNER_GOOGLE_EMAIL} (${
                     bridgeSource === 'server' ? 'Bridge Server Global' : 'Bridge Browser Lokal'
-                  }). Orang lain tidak dapat mengedit isi spreadsheet secara langsung di luar aplikasi ini.`
-                : isOwner && !needsAuth
-                  ? 'Aktifkan kunci View-Only dan Jembatan Apps Script di bawah agar pengguna lain juga dapat menyimpan otomatis ke spreadsheet Anda tanpa login sebagai editor.'
-                  : `Spreadsheet hanya terpusat pada akun ${OWNER_GOOGLE_EMAIL}. Pengaturan dan perubahan struktur spreadsheet dikunci khusus pemilik.`}
+                  }). Pengaturan struktur spreadsheet disembunyikan untuk Operator.`
+                : isAdminMode
+                  ? 'Aktifkan kunci View-Only dan Jembatan Apps Script di bawah agar Operator dapat menyimpan otomatis ke spreadsheet Anda tanpa login sebagai editor.'
+                  : `Spreadsheet hanya terpusat pada akun ${OWNER_GOOGLE_EMAIL}. Pengaturan sensitif dan perubahan struktur spreadsheet dikunci khusus Admin.`}
             </p>
           </div>
         </div>
-        {isOwner && !needsAuth && (
+        {isAdminMode && (
           <button
             type="button"
             onClick={() => setShowOwnerSetup((v) => !v)}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-[#0B5D3B] bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/50 whitespace-nowrap shrink-0"
           >
             <Wrench className="w-3.5 h-3.5" />
             Proteksi &amp; Jembatan Pemilik
@@ -227,20 +228,20 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
       </div>
 
       {errorMessage && (
-        <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-800">
+        <div className="p-3.5 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/70 rounded-xl text-xs text-red-800 dark:text-red-200">
           {errorMessage}
         </div>
       )}
 
-      {/* OWNER PROTECTION & APPS SCRIPT BRIDGE PANEL */}
-      {isOwner && !needsAuth && showOwnerSetup && (
-        <div className="bg-white border-2 border-[#0B5D3B]/30 rounded-xl p-5 space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200">
+      {/* OWNER PROTECTION & APPS SCRIPT BRIDGE PANEL (ADMIN ONLY) */}
+      {isAdminMode && showOwnerSetup && (
+        <div className="st-surface border-2 border-[#0B5D3B]/35 dark:border-emerald-700/60 rounded-xl p-5 space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b st-border">
             <div>
-              <h2 className="text-sm font-semibold text-slate-900">
+              <h2 className="text-sm font-semibold st-text-primary">
                 1. Kunci Spreadsheet agar Orang Lain Tidak Bisa Edit di Google Sheets
               </h2>
-              <p className="text-xs text-slate-600 mt-0.5">
+              <p className="text-xs st-text-secondary mt-0.5">
                 Mengatur tautan Google Sheets menjadi <strong>Hanya Lihat (Viewer)</strong> untuk orang lain dan memproteksi seluruh sheet agar hanya akun Anda (<code>{OWNER_GOOGLE_EMAIL}</code>) &amp; aplikasi yang bisa menulis data.
               </p>
             </div>
@@ -260,21 +261,21 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
           <div className="space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
-                <h2 className="text-sm font-semibold text-slate-900">
+                <h2 className="text-sm font-semibold st-text-primary">
                   2. Jembatan Aplikasi (Wajib Agar Orang Lain Bisa Simpan ke Spreadsheet Anda)
                 </h2>
-                <p className="text-xs text-slate-600 mt-0.5">
+                <p className="text-xs st-text-secondary mt-0.5">
                   Karena Google Drive tidak mengizinkan orang lain mengedit file Anda tanpa izin Editor, pasang skrip Apps Script berikut pada spreadsheet Anda dan deploy sebagai Web App (<strong>Execute as: Me</strong>, <strong>Who has access: Anyone</strong>).
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => void handleCopyAppsScript()}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-800 bg-slate-100 border border-slate-300 rounded-lg hover:bg-slate-200 whitespace-nowrap shrink-0"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold st-text-primary st-surface-muted border rounded-lg hover:opacity-90 whitespace-nowrap shrink-0"
               >
                 {copiedScript ? (
                   <>
-                    <Check className="w-3.5 h-3.5 text-[#0B5D3B]" />
+                    <Check className="w-3.5 h-3.5 text-[#0B5D3B] dark:text-emerald-400" />
                     Kode Apps Script Tersalin
                   </>
                 ) : (
@@ -286,7 +287,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
               </button>
             </div>
 
-            <ol className="text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3.5 space-y-1 list-decimal list-inside">
+            <ol className="text-xs st-text-secondary st-surface-muted border rounded-lg p-3.5 space-y-1 list-decimal list-inside">
               <li>Buka Google Spreadsheet Anda &rarr; klik menu <strong>Ekstensi</strong> &rarr; <strong>Apps Script</strong>.</li>
               <li>Hapus kode bawaan, tempel kode hasil tombol <strong>Salin Kode Apps Script</strong> di atas, lalu tekan Simpan.</li>
               <li>Klik <strong>Terapkan (Deploy)</strong> &rarr; <strong>Deployment baru</strong> &rarr; jenis <strong>Aplikasi Web</strong>: pilih <em>Jalankan sebagai: Saya ({OWNER_GOOGLE_EMAIL})</em> dan <em>Yang memiliki akses: Siapa saja (Anyone)</em>.</li>
@@ -305,7 +306,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                 value={bridgeUrlInput}
                 onChange={(e) => setBridgeUrlInput(e.target.value)}
                 placeholder="https://script.google.com/macros/s/.../exec"
-                className="flex-1 px-3 py-2 text-xs font-mono-tabular border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                className="flex-1 px-3 py-2 text-xs font-mono-tabular st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
               />
               <button
                 type="submit"
@@ -321,7 +322,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                     setBridgeUrlInput('');
                     onClearLocalBridgeUrl();
                   }}
-                  className="px-3 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 whitespace-nowrap shrink-0"
+                  className="px-3 py-2 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90 whitespace-nowrap shrink-0"
                 >
                   Hapus URL Lokal
                 </button>
@@ -333,44 +334,52 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
 
       {/* CONNECTION GATE */}
       {!canViewTrackingData ? (
-        <div className="bg-white border border-slate-200 rounded-xl p-8 text-center">
-          <FileSpreadsheet className="w-10 h-10 text-[#0B5D3B] mx-auto mb-3" />
-          <h2 className="text-base font-semibold text-slate-900">
+        <div className="st-surface border rounded-xl p-8 text-center">
+          <FileSpreadsheet className="w-10 h-10 text-[#0B5D3B] dark:text-emerald-400 mx-auto mb-3" />
+          <h2 className="text-base font-semibold st-text-primary">
             Database Tracking Terpusat ke Akun Pemilik
           </h2>
-          <p className="text-sm text-slate-600 mt-1.5 max-w-xl mx-auto mb-5">
-            Masuk dengan akun Google pemilik (
-            <span className="font-mono-tabular font-semibold text-slate-800">
+          <p className="text-sm st-text-secondary mt-1.5 max-w-xl mx-auto mb-5">
+            Masuk sebagai Admin (
+            <span className="font-mono-tabular font-semibold st-text-primary">
               {OWNER_GOOGLE_EMAIL}
             </span>
-            ) untuk menyiapkan spreadsheet utama dan mengaktifkan Jembatan Apps Script agar semua pengguna dapat menyimpan Surat Tugas langsung ke spreadsheet pemilik.
+            ) untuk menyiapkan spreadsheet utama dan mengaktifkan Jembatan Apps Script agar semua operator dapat menyimpan Surat Tugas langsung ke spreadsheet pemilik.
           </p>
           <div className="flex justify-center">
             <GoogleSignInButton
               onClick={onGoogleLogin}
               disabled={isConnecting}
-              label={isConnecting ? 'Menghubungkan...' : 'Masuk Pemilik (Google)'}
+              label={isConnecting ? 'Menghubungkan...' : 'Masuk Admin (Google)'}
             />
           </div>
         </div>
       ) : !spreadsheet ? (
-        <div className="bg-white border border-slate-200 rounded-xl p-8">
+        <div className="st-surface border rounded-xl p-8">
           <div className="max-w-xl mx-auto text-center space-y-4">
-            <FileSpreadsheet className="w-10 h-10 text-[#0B5D3B] mx-auto" />
+            <FileSpreadsheet className="w-10 h-10 text-[#0B5D3B] dark:text-emerald-400 mx-auto" />
             <div>
-              <h2 className="text-base font-semibold text-slate-900">
-                Siapkan Spreadsheet Tracking Surat Tugas Pemilik
+              <h2 className="text-base font-semibold st-text-primary">
+                {isAdminMode
+                  ? 'Siapkan Spreadsheet Tracking Surat Tugas Pemilik'
+                  : 'Spreadsheet Tracking Belum Disiapkan Admin'}
               </h2>
-              <p className="text-sm text-slate-600 mt-1">
-                Buat atau temukan otomatis spreadsheet{' '}
-                <span className="font-medium text-slate-800">
-                  Database Tracking Surat Tugas - Kemenag Jember
-                </span>{' '}
-                di Google Drive akun {OWNER_GOOGLE_EMAIL}, atau tautkan URL Spreadsheet yang sudah ada.
+              <p className="text-sm st-text-secondary mt-1">
+                {isAdminMode ? (
+                  <>
+                    Buat atau temukan otomatis spreadsheet{' '}
+                    <span className="font-medium st-text-primary">
+                      Database Tracking Surat Tugas - Kemenag Jember
+                    </span>{' '}
+                    di Google Drive akun {OWNER_GOOGLE_EMAIL}, atau tautkan URL Spreadsheet yang sudah ada.
+                  </>
+                ) : (
+                  'Pengaturan spreadsheet utama hanya tersedia dalam Mode Admin.'
+                )}
               </p>
             </div>
 
-            {isOwner && !needsAuth && (
+            {isAdminMode && (
               <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
                 <button
                   type="button"
@@ -386,7 +395,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowLinkInput((v) => !v)}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90 transition-colors whitespace-nowrap shrink-0"
                 >
                   <Link2 className="w-4 h-4" />
                   Tautkan URL / ID Spreadsheet
@@ -394,7 +403,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
               </div>
             )}
 
-            {isOwner && showLinkInput && (
+            {isAdminMode && showLinkInput && (
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -410,7 +419,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                   value={customUrlInput}
                   onChange={(e) => setCustomUrlInput(e.target.value)}
                   placeholder="Tempel URL atau ID Google Spreadsheet..."
-                  className="flex-1 px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                  className="flex-1 px-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                 />
                 <button
                   type="submit"
@@ -425,37 +434,37 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
       ) : (
         <>
           {/* SPREADSHEET SUMMARY BAR */}
-          <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+          <div className="st-surface border rounded-xl p-4 space-y-3">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <FileSpreadsheet className="w-4 h-4 text-[#0B5D3B] shrink-0" />
-                  <span className="text-sm font-semibold text-slate-900 truncate">
+                  <FileSpreadsheet className="w-4 h-4 text-[#0B5D3B] dark:text-emerald-400 shrink-0" />
+                  <span className="text-sm font-semibold st-text-primary truncate">
                     {spreadsheet.title}
                   </span>
                 </div>
-                <div className="text-xs text-slate-500 mt-0.5 font-mono-tabular truncate">
+                <div className="text-xs st-text-muted mt-0.5 font-mono-tabular truncate">
                   Pemilik: {OWNER_GOOGLE_EMAIL} · {spreadsheet.sheets.length} sheet tahunan
                 </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                {spreadsheet.spreadsheetUrl && (
+                {isAdminMode && spreadsheet.spreadsheetUrl && (
                   <a
                     href={spreadsheet.spreadsheetUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#0B5D3B] bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors whitespace-nowrap shrink-0"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-lg transition-colors whitespace-nowrap shrink-0"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
-                    {isOwner ? 'Buka Google Sheets' : 'Lihat Google Sheets (Read-Only)'}
+                    Buka Google Sheets
                   </a>
                 )}
-                {isOwner && !needsAuth && (
+                {isAdminMode && (
                   <button
                     type="button"
                     onClick={() => setShowLinkInput((v) => !v)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90 transition-colors whitespace-nowrap shrink-0"
                   >
                     <Link2 className="w-3.5 h-3.5" />
                     Ganti Spreadsheet
@@ -465,7 +474,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                   type="button"
                   disabled={isSyncing}
                   onClick={onRefreshRows}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors whitespace-nowrap shrink-0"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90 disabled:opacity-50 transition-colors whitespace-nowrap shrink-0"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
                   Muat Ulang
@@ -473,7 +482,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
               </div>
             </div>
 
-            {isOwner && showLinkInput && (
+            {isAdminMode && showLinkInput && (
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -482,14 +491,14 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                   setCustomUrlInput('');
                   setShowLinkInput(false);
                 }}
-                className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-slate-100"
+                className="flex flex-col sm:flex-row gap-2 pt-2 border-t st-border"
               >
                 <input
                   type="text"
                   value={customUrlInput}
                   onChange={(e) => setCustomUrlInput(e.target.value)}
                   placeholder="Tempel URL atau ID Google Spreadsheet tujuan milik pemilik..."
-                  className="flex-1 px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                  className="flex-1 px-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                 />
                 <button
                   type="submit"
@@ -501,9 +510,9 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
             )}
 
             {/* YEAR SHEETS BAR */}
-            <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+            <div className="pt-2 border-t st-border flex flex-wrap items-center justify-between gap-2">
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-xs font-medium text-slate-500 mr-1">
+                <span className="text-xs font-medium st-text-muted mr-1">
                   Sheet Tahun:
                 </span>
                 {sortedSheets.map((tab) => (
@@ -514,29 +523,29 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                     className={`px-3 py-1.5 text-xs font-mono-tabular font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
                       selectedYear === tab.title
                         ? 'bg-[#0B5D3B] text-white'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        : 'st-surface-muted st-text-secondary hover:opacity-90'
                     }`}
                   >
                     {tab.title}
                   </button>
                 ))}
-                {(isOwner || bridgeConnected) && (
+                {isAdminMode && (
                   <button
                     type="button"
                     onClick={() => setShowNewYearForm((v) => !v)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-[#0B5D3B] bg-emerald-50 hover:bg-emerald-100 rounded-md transition-colors whitespace-nowrap shrink-0"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-md transition-colors whitespace-nowrap shrink-0"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     Buat Sheet Tahun Baru
                   </button>
                 )}
               </div>
-              <span className="text-[11px] text-slate-500">
+              <span className="text-[11px] st-text-muted">
                 Sheet baru otomatis dibuat saat menyimpan Surat Tugas di tahun berikutnya.
               </span>
             </div>
 
-            {showNewYearForm && (
+            {isAdminMode && showNewYearForm && (
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -545,9 +554,9 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                   onCreateYearSheet(cleanYear);
                   setShowNewYearForm(false);
                 }}
-                className="flex items-center gap-2 pt-2 border-t border-slate-100"
+                className="flex items-center gap-2 pt-2 border-t st-border"
               >
-                <label className="text-xs font-medium text-slate-700">
+                <label className="text-xs font-medium st-text-secondary">
                   Tahun Sheet:
                 </label>
                 <input
@@ -557,7 +566,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                   value={newYearInput}
                   onChange={(e) => setNewYearInput(e.target.value)}
                   placeholder="2027"
-                  className="w-24 px-2.5 py-1.5 text-sm font-mono-tabular border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                  className="w-24 px-2.5 py-1.5 text-sm font-mono-tabular st-input border rounded-md focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                 />
                 <button
                   type="submit"
@@ -571,33 +580,33 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
           </div>
 
           {/* DATA TABLE */}
-          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/70">
+          <div className="st-surface border rounded-xl overflow-hidden">
+            <div className="px-4 py-3 border-b st-border st-surface-muted flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="relative flex-1 max-w-md">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <Search className="w-4 h-4 st-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Cari kegiatan, nama pegawai, lokasi, atau nomor dasar..."
-                  className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                  className="w-full pl-9 pr-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                 />
               </div>
-              <div className="text-xs text-slate-500 font-mono-tabular">
+              <div className="text-xs st-text-muted font-mono-tabular">
                 Sheet {selectedYear}: {filteredRows.length} data tercatat
               </div>
             </div>
 
             {isSyncing && rows.length === 0 ? (
-              <div className="py-12 text-center text-sm text-slate-500">
+              <div className="py-12 text-center text-sm st-text-muted">
                 Memuat data dari Google Sheets ({selectedYear})...
               </div>
             ) : filteredRows.length === 0 ? (
               <div className="py-12 px-6 text-center">
-                <p className="text-sm font-medium text-slate-900">
+                <p className="text-sm font-medium st-text-primary">
                   Belum ada data Surat Tugas di Sheet {selectedYear}
                 </p>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs st-text-muted mt-1">
                   Setiap Surat Tugas yang dicetak atau diunduh di Editor Surat akan tercatat wajib di sheet tahun {selectedYear}.
                 </p>
               </div>
@@ -605,7 +614,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="border-b border-slate-200 text-xs font-semibold text-slate-600 bg-slate-50/50">
+                    <tr className="border-b st-border text-xs font-semibold st-text-secondary st-surface-muted">
                       <th className="py-2.5 px-4 w-12 text-center">No</th>
                       <th className="py-2.5 px-4">Kegiatan &amp; Dasar</th>
                       <th className="py-2.5 px-4">Pegawai Berangkat</th>
@@ -613,34 +622,34 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                       <th className="py-2.5 px-4 text-right w-40">Aksi</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 text-sm">
+                  <tbody className="divide-y divide-slate-100 night:divide-[#e4d5b3] dark:divide-slate-700/70 text-sm">
                     {filteredRows.map((row, idx) => (
                       <tr
                         key={`${row.rowNumber}-${row.idSurat}`}
-                        className="hover:bg-slate-50/80 transition-colors"
+                        className="hover:bg-slate-50/80 night:hover:bg-[#f5ecd5] dark:hover:bg-slate-800/60 transition-colors"
                       >
-                        <td className="py-3 px-4 text-center text-xs text-slate-500 font-mono-tabular align-top">
+                        <td className="py-3 px-4 text-center text-xs st-text-muted font-mono-tabular align-top">
                           {idx + 1}
                         </td>
                         <td className="py-3 px-4 align-top max-w-md">
-                          <div className="font-medium text-slate-900 line-clamp-2">
+                          <div className="font-medium st-text-primary line-clamp-2">
                             {row.namaKegiatan || '-'}
                           </div>
-                          <div className="text-xs text-slate-500 mt-1">
+                          <div className="text-xs st-text-muted mt-1">
                             {row.dasarAsal} ({row.dasarNomor})
                           </div>
-                          <div className="text-[11px] text-slate-400 mt-0.5 font-mono-tabular">
+                          <div className="text-[11px] st-text-muted mt-0.5 font-mono-tabular">
                             {row.kriteria} · Diinput {row.waktuInput}
                           </div>
                         </td>
-                        <td className="py-3 px-4 align-top text-xs text-slate-700 whitespace-pre-line max-w-xs">
+                        <td className="py-3 px-4 align-top text-xs st-text-secondary whitespace-pre-line max-w-xs">
                           {row.daftarPegawaiRingkas}
                         </td>
-                        <td className="py-3 px-4 align-top text-xs text-slate-600">
-                          <div className="font-medium text-slate-800">
+                        <td className="py-3 px-4 align-top text-xs st-text-secondary">
+                          <div className="font-medium st-text-primary">
                             {row.lokasiTujuan || '-'}
                           </div>
-                          <div className="font-mono-tabular text-slate-500 mt-0.5">
+                          <div className="font-mono-tabular st-text-muted mt-0.5">
                             {row.tanggalMulai && row.tanggalMulai !== '-'
                               ? formatTanggalIndo(row.tanggalMulai)
                               : '-'}
@@ -651,15 +660,15 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                             <button
                               type="button"
                               onClick={() =>
-                                onLoadTrackedDraft(row.rawDraft!, !isOwner)
+                                onLoadTrackedDraft(row.rawDraft!, !isAdminMode)
                               }
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#0B5D3B] bg-emerald-50 hover:bg-emerald-100 rounded-md transition-colors whitespace-nowrap shrink-0"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-md transition-colors whitespace-nowrap shrink-0"
                             >
                               <FolderOpen className="w-3.5 h-3.5" />
-                              {isOwner ? 'Buka di Editor' : 'Salin ke Editor'}
+                              {isAdminMode ? 'Buka di Editor' : 'Salin ke Editor'}
                             </button>
                           ) : (
-                            <span className="text-[11px] text-slate-400">
+                            <span className="text-[11px] st-text-muted">
                               Hanya arsip tabel
                             </span>
                           )}
