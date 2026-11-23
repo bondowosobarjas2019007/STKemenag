@@ -5,6 +5,7 @@ import {
   type DirectoryPegawaiInput,
   type ExtractionPrecisionMode,
 } from '../lib/parseDasarPdf.ts';
+import { checkAndRecordSecurityGuard } from '../lib/securityGuard.ts';
 
 export const config = {
   api: {
@@ -44,6 +45,18 @@ export default async function handler(
 
   if (req.method !== 'POST') {
     sendJson(res, 405, { error: 'Metode harus POST untuk mengunggah PDF.' });
+    return;
+  }
+
+  const guard = checkAndRecordSecurityGuard(req.headers);
+  if (!guard.allowed) {
+    sendJson(res, guard.status || 423, {
+      locked: true,
+      lockedUntil: guard.lockedUntil,
+      remainingSeconds: guard.remainingSeconds,
+      reason: guard.reason,
+      error: guard.error,
+    });
     return;
   }
 

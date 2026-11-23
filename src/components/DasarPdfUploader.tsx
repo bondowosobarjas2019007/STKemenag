@@ -7,8 +7,11 @@ import {
   FileUp,
   Layers,
   Loader2,
+  Lock,
   Scissors,
+  ShieldAlert,
   Sparkles,
+  Unlock,
   Users,
   X,
   ZoomIn,
@@ -126,6 +129,38 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
     precisionMode: 'cepat' | 'teliti';
     modelUsed?: string;
   } | null>(null);
+  const [securityLock, setSecurityLock] = useState<{
+    lockedUntil: number;
+    reason: string;
+  } | null>(null);
+  const [lockRemainingSeconds, setLockRemainingSeconds] = useState<number>(0);
+  const [showAdminUnlockForm, setShowAdminUnlockForm] = useState<boolean>(false);
+  const [adminKeyInput, setAdminKeyInput] = useState<string>('');
+  const [isUnlockingAdmin, setIsUnlockingAdmin] = useState<boolean>(false);
+  const [adminUnlockError, setAdminUnlockError] = useState<string | null>(null);
+  const [adminUnlockNotice, setAdminUnlockNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!securityLock) {
+      setLockRemainingSeconds(0);
+      return;
+    }
+    const updateCountdown = () => {
+      const diffSec = Math.max(
+        0,
+        Math.ceil((securityLock.lockedUntil - Date.now()) / 1000)
+      );
+      setLockRemainingSeconds(diffSec);
+      if (diffSec === 0) {
+        setSecurityLock(null);
+        setShowAdminUnlockForm(false);
+        setAdminUnlockError(null);
+      }
+    };
+    updateCountdown();
+    const timerId = window.setInterval(updateCountdown, 1000);
+    return () => window.clearInterval(timerId);
+  }, [securityLock]);
 
   useEffect(() => {
     thumbAbortRef.current?.abort();
@@ -463,6 +498,37 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
       const { res: response, text: rawText, json: payload } = attempt;
 
       if (!response.ok || !payload) {
+        if (response.status === 423 && payload) {
+          const lockedObj = payload as {
+            error?: string;
+            reason?: string;
+            lockedUntil?: number;
+            remainingSeconds?: number;
+          };
+          const fallbackDurationMs =
+            typeof lockedObj.remainingSeconds === 'number' &&
+            lockedObj.remainingSeconds > 0
+              ? lockedObj.remainingSeconds * 1000
+              : 10 * 60 * 1000;
+          const lockedUntil =
+            typeof lockedObj.lockedUntil === 'number' &&
+            lockedObj.lockedUntil > Date.now()
+              ? lockedObj.lockedUntil
+              : Date.now() + fallbackDurationMs;
+          setSecurityLock({
+            lockedUntil,
+            reason:
+              lockedObj.reason ||
+              lockedObj.error ||
+              'Sistem ekstraksi dikunci otomatis selama 10 menit untuk perlindungan kuota API.',
+          });
+          setShowAdminUnlockForm(false);
+          setAdminUnlockError(null);
+          setAdminKeyInput('');
+          setErrorMessage(null);
+          setLastSummary(null);
+          return;
+        }
         if (response.status === 413) {
           throw new Error(
             'Ukuran file PDF masih terlalu besar untuk batas server Vercel (maksimal 4,5 MB). Silakan pilih lebih sedikit halaman.'
@@ -661,6 +727,60 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
       rangeText: formatPageSelectionInput(nextPages),
     });
     if (nextPages.length > 0) setErrorMessage(null);
+  };
+
+  const handleAdminUnlockSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isUnlockingAdmin) return;
+    if (!adminKeyInput.trim()) {
+      setAdminUnlockError('Masukkan Kode Admin terlebih dahulu.');
+      return;
+    }
+
+    setIsUnlockingAdmin(true);
+    setAdminUnlockError(null);
+    try {
+      const res = await fetch('/api/security-unlock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ adminKey: adminKeyInput }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        message?: string;
+      };
+
+      if (!res.ok || !data.success) {
+        setAdminUnlockError(data.message || 'Kode Admin salah.');
+        return;
+      }
+
+      setSecurityLock(null);
+      setLockRemainingSeconds(0);
+      setShowAdminUnlockForm(false);
+      setAdminKeyInput('');
+      setAdminUnlockError(null);
+      setErrorMessage(null);
+      const noticeMsg =
+        data.message || 'Sistem berhasil dibuka kembali oleh Admin.';
+      setAdminUnlockNotice(noticeMsg);
+      window.setTimeout(() => {
+        setAdminUnlockNotice((prev) => (prev === noticeMsg ? null : prev));
+      }, 5000);
+    } catch {
+      setAdminUnlockError(
+        'Gagal menghubungi server untuk membuka kunci. Coba beberapa saat lagi.'
+      );
+    } finally {
+      setIsUnlockingAdmin(false);
+    }
+  };
+
+  const formatCooldownTimer = (totalSeconds: number) => {
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
   return (
@@ -1013,6 +1133,108 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
               {stageText || 'Memotong halaman terpilih & mengoptimalkan PDF...'}
             </div>
           </div>
+        </div>
+      )}
+
+      {securityLock && (
+        <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg text-xs text-amber-950 space-y-2.5">
+          <div className="flex items-start gap-2">
+            <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+            <div className="min-w-0 flex-1 space-y-1">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-semibold text-amber-950">
+                  Sistem Terkunci Sementara (Auto-Cooldown 10 Menit)
+                </span>
+                <span className="px-2 py-0.5 bg-white border border-amber-300 rounded-md font-mono-tabular text-[11px] font-semibold text-amber-900">
+                  Sisa waktu: {formatCooldownTimer(lockRemainingSeconds)}
+                </span>
+              </div>
+              <p className="text-[11px] text-amber-900 leading-relaxed">
+                {securityLock.reason}
+              </p>
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-amber-200/80">
+            {!showAdminUnlockForm ? (
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAdminUnlockForm(true);
+                    setAdminUnlockError(null);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-amber-900 bg-white border border-amber-300 rounded-md hover:bg-amber-100 transition-colors"
+                >
+                  <Lock className="w-3 h-3" />
+                  Saya Admin — Buka Kunci Sekarang
+                </button>
+              </div>
+            ) : (
+              <form
+                onSubmit={(e) => void handleAdminUnlockSubmit(e)}
+                className="space-y-2"
+              >
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <input
+                    type="password"
+                    value={adminKeyInput}
+                    disabled={isUnlockingAdmin}
+                    onChange={(e) => {
+                      setAdminKeyInput(e.target.value);
+                      if (adminUnlockError) setAdminUnlockError(null);
+                    }}
+                    placeholder="Masukkan Kode Admin"
+                    autoFocus
+                    className="flex-1 px-2.5 py-1.5 text-xs bg-white border border-amber-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/25 focus:border-[#0B5D3B]"
+                  />
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="submit"
+                      disabled={isUnlockingAdmin}
+                      className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-[#0B5D3B] rounded-md hover:bg-[#09492E] disabled:opacity-60 transition-colors whitespace-nowrap"
+                    >
+                      {isUnlockingAdmin ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          Membuka...
+                        </>
+                      ) : (
+                        <>
+                          <Unlock className="w-3 h-3" />
+                          Hidupkan Kembali
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isUnlockingAdmin}
+                      onClick={() => {
+                        setShowAdminUnlockForm(false);
+                        setAdminUnlockError(null);
+                        setAdminKeyInput('');
+                      }}
+                      className="px-2.5 py-1.5 text-xs font-medium text-amber-900 bg-white border border-amber-300 rounded-md hover:bg-amber-100 disabled:opacity-50"
+                    >
+                      Batal
+                    </button>
+                  </div>
+                </div>
+                {adminUnlockError && (
+                  <p className="text-[11px] font-medium text-red-700">
+                    {adminUnlockError}
+                  </p>
+                )}
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {adminUnlockNotice && (
+        <div className="flex items-center gap-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-[#0B5D3B] font-medium">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span>{adminUnlockNotice}</span>
         </div>
       )}
 

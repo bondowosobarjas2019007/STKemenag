@@ -13,6 +13,10 @@ import {
   handleRelayPost,
   type RelayPostPayload,
 } from './lib/sheetsRelay.ts';
+import {
+  checkAndRecordSecurityGuard,
+  unlockSecurityLock,
+} from './lib/securityGuard.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -48,6 +52,18 @@ async function createServer() {
     req: express.Request,
     res: express.Response
   ) => {
+    const guard = checkAndRecordSecurityGuard(req.headers);
+    if (!guard.allowed) {
+      res.status(guard.status || 423).json({
+        locked: true,
+        lockedUntil: guard.lockedUntil,
+        remainingSeconds: guard.remainingSeconds,
+        reason: guard.reason,
+        error: guard.error,
+      });
+      return;
+    }
+
     try {
       let cleanBase64 = '';
       let textContent = '';
@@ -145,6 +161,19 @@ async function createServer() {
 
   app.post('/api/parse-dasar-pdf', handleParseDasarPdf);
   app.post('/api/ekstrak-dasar', handleParseDasarPdf);
+
+  app.post('/api/security-unlock', (req, res) => {
+    const body =
+      req.body && typeof req.body === 'object'
+        ? (req.body as Record<string, unknown>)
+        : {};
+    const adminKey = typeof body.adminKey === 'string' ? body.adminKey : '';
+    const result = unlockSecurityLock(adminKey);
+    res.status(result.status).json({
+      success: result.success,
+      message: result.message,
+    });
+  });
 
   app.get('/api/sheets-tracking', async (req, res) => {
     try {
