@@ -17,6 +17,7 @@ import {
   ZoomIn,
 } from 'lucide-react';
 import { INITIAL_PEGAWAI_DIRECTORY, Pegawai } from '../types/surat';
+import { useViewport } from '../contexts/ViewportContext';
 import {
   computePdfSelectionSha256,
   extractSelectedPagesTextLayer,
@@ -92,6 +93,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
   onApplyParsedResult,
   onOpenDirectoryMulti,
 }) => {
+  const { isMobileLayout, isForcedMobile } = useViewport();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const rangeInputRef = useRef<HTMLInputElement>(null);
   const thumbAbortRef = useRef<AbortController | null>(null);
@@ -852,22 +854,28 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
               </div>
             </div>
           ) : (
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div
+              className={`flex flex-col justify-between gap-3 ${
+                isMobileLayout ? '' : 'sm:flex-row sm:items-center'
+              }`}
+            >
               <div className="min-w-0">
                 <div className="text-xs font-medium st-text-primary">
                   Unggah PDF Undangan / Nota Dinas / Permohonan
                 </div>
                 <div className="text-[11px] st-text-muted mt-0.5">
-                  Otomatis memotong halaman terpilih & mengompres ukuran agar cepat dan aman (&lt; 3,5 MB)
+                  Otomatis memotong halaman terpilih &amp; mengompres ukuran agar cepat dan aman (&lt; 3,5 MB)
                 </div>
               </div>
               <button
                 type="button"
                 disabled={isLoading || isInspecting}
                 onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap shrink-0"
+                className={`min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap shrink-0 ${
+                  isMobileLayout ? 'w-full' : ''
+                }`}
               >
-                <FileUp className="w-3.5 h-3.5" />
+                <FileUp className="w-4 h-4 shrink-0" />
                 Unggah file PDF dasar surat
               </button>
             </div>
@@ -916,7 +924,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
             <button
               type="button"
               onClick={handleSelectSubsetMode}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-md border transition-colors ${
+              className={`min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-md border transition-colors ${
                 pendingPdf.selectionMode === 'subset'
                   ? 'bg-[#0B5D3B] text-white border-[#0B5D3B]'
                   : 'st-surface st-text-secondary border-slate-300 night:border-[#d3c096] dark:border-slate-600 hover:bg-slate-50 night:hover:bg-[#efe3c4] dark:hover:bg-slate-800'
@@ -928,7 +936,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
             <button
               type="button"
               onClick={handleSelectAllPages}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-md border transition-colors ${
+              className={`min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-md border transition-colors ${
                 pendingPdf.selectionMode === 'all'
                   ? 'bg-[#0B5D3B] text-white border-[#0B5D3B]'
                   : 'st-surface st-text-secondary border-slate-300 night:border-[#d3c096] dark:border-slate-600 hover:bg-slate-50 night:hover:bg-[#efe3c4] dark:hover:bg-slate-800'
@@ -961,7 +969,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                 }
               }}
               placeholder="Contoh: 1, 3-4"
-              className="w-full px-2.5 py-1.5 text-xs font-mono-tabular st-input border rounded-md focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+              className="w-full min-h-[44px] px-3 py-2 text-sm sm:text-xs font-mono-tabular st-input border rounded-md focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
             />
           </div>
 
@@ -980,7 +988,11 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
               )}
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 max-h-[380px] overflow-y-auto p-2 st-surface border rounded-md">
+            <div
+              className={`grid gap-2.5 max-h-[380px] overflow-y-auto p-2 st-surface border rounded-md ${
+                isMobileLayout ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4'
+              }`}
+            >
               {Array.from({ length: pendingPdf.totalPages }, (_, idx) => {
                 const pageNum = idx + 1;
                 const checked = pendingPdf.selectedPages.includes(pageNum);
@@ -1028,9 +1040,10 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                           void handleOpenZoom(pageNum);
                         }}
                         title={`Perbesar halaman ${pageNum}`}
-                        className="absolute top-1.5 right-1.5 p-1 rounded bg-white/95 dark:bg-slate-900/90 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 shadow-sm hover:bg-white hover:text-[#0B5D3B] transition-colors"
+                        aria-label={`Perbesar halaman ${pageNum}`}
+                        className="absolute top-1.5 right-1.5 min-w-[34px] min-h-[34px] inline-flex items-center justify-center rounded bg-white/95 dark:bg-slate-900/90 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 shadow-sm hover:bg-white hover:text-[#0B5D3B] transition-colors"
                       >
-                        <ZoomIn className="w-3.5 h-3.5" />
+                        <ZoomIn className="w-4 h-4" />
                       </button>
 
                       {checked && (
@@ -1040,13 +1053,13 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                       )}
                     </div>
 
-                    <div className="flex items-center justify-between gap-1.5 px-2 py-1.5 text-[11px]">
+                    <div className="flex items-center justify-between gap-1.5 px-2 py-2 text-[11px]">
                       <span className="inline-flex items-center gap-1.5 font-mono-tabular font-semibold st-text-primary">
                         <input
                           type="checkbox"
                           checked={checked}
                           onChange={() => handleToggleSinglePage(pageNum)}
-                          className="accent-[#0B5D3B] rounded"
+                          className="w-4 h-4 accent-[#0B5D3B] rounded"
                         />
                         Hal. {pageNum}
                       </span>
@@ -1065,7 +1078,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                   type="button"
                   disabled={isRenderingThumbnails}
                   onClick={handleLoadMoreThumbnails}
-                  className="px-3 py-1 text-[11px] font-medium text-[#0B5D3B] dark:text-emerald-400 st-surface border border-emerald-300 dark:border-emerald-700 rounded-md hover:bg-emerald-50 dark:hover:bg-emerald-950/40 disabled:opacity-50"
+                  className="min-h-[44px] px-3.5 py-2 text-xs font-medium text-[#0B5D3B] dark:text-emerald-400 st-surface border border-emerald-300 dark:border-emerald-700 rounded-md hover:bg-emerald-50 dark:hover:bg-emerald-950/40 disabled:opacity-50"
                 >
                   Muat Pratinjau Halaman {renderedUpTo + 1}–
                   {Math.min(pendingPdf.totalPages, renderedUpTo + 20)}
@@ -1074,7 +1087,11 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
             )}
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 border-t border-emerald-200/70 night:border-[#d3c096] dark:border-emerald-800/60">
+          <div
+            className={`flex flex-col justify-between gap-2.5 pt-2 border-t border-emerald-200/70 night:border-[#d3c096] dark:border-emerald-800/60 ${
+              isMobileLayout ? '' : 'sm:flex-row sm:items-center'
+            }`}
+          >
             <div className="text-[11px] st-text-secondary font-medium">
               {pendingPdf.selectedPages.length > 0 ? (
                 <span>
@@ -1093,7 +1110,13 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
               )}
             </div>
 
-            <div className="flex items-center justify-end gap-2">
+            <div
+              className={
+                isMobileLayout
+                  ? 'grid grid-cols-2 gap-2 w-full'
+                  : 'flex items-center justify-end gap-2'
+              }
+            >
               <button
                 type="button"
                 disabled={isLoading}
@@ -1101,7 +1124,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                   setPendingPdf(null);
                   setErrorMessage(null);
                 }}
-                className="px-3 py-1.5 text-xs font-medium st-text-secondary st-surface border border-slate-300 night:border-[#d3c096] dark:border-slate-600 rounded-md hover:bg-slate-50 night:hover:bg-[#efe3c4] dark:hover:bg-slate-800 disabled:opacity-50"
+                className="min-h-[44px] inline-flex items-center justify-center px-3 py-2 text-xs font-medium st-text-secondary st-surface border border-slate-300 night:border-[#d3c096] dark:border-slate-600 rounded-md hover:bg-slate-50 night:hover:bg-[#efe3c4] dark:hover:bg-slate-800 disabled:opacity-50"
               >
                 Batal
               </button>
@@ -1116,7 +1139,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                     { totalPagesHint: pendingPdf.totalPages }
                   )
                 }
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-[#0B5D3B] rounded-md hover:bg-[#09492E] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-md hover:bg-[#09492E] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <FileUp className="w-3.5 h-3.5" />
                 Ekstrak ({pendingPdf.selectedPages.length} Hal.)
@@ -1169,9 +1192,9 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                   <button
                     type="button"
                     onClick={onRequestAdminSignIn}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-amber-950 night:text-[#3b3228] dark:text-amber-100 st-surface border border-amber-300 dark:border-amber-700 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors shrink-0"
+                    className="min-h-[40px] inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-950 night:text-[#3b3228] dark:text-amber-100 st-surface border border-amber-300 dark:border-amber-700 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors shrink-0"
                   >
-                    <Lock className="w-3 h-3" />
+                    <Lock className="w-3.5 h-3.5" />
                     Masuk Admin (Google)
                   </button>
                 )}
@@ -1184,9 +1207,9 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                     setShowAdminUnlockForm(true);
                     setAdminUnlockError(null);
                   }}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-amber-900 night:text-[#3b3228] dark:text-amber-200 st-surface border border-amber-300 dark:border-amber-700 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
+                  className="min-h-[40px] inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-900 night:text-[#3b3228] dark:text-amber-200 st-surface border border-amber-300 dark:border-amber-700 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
                 >
-                  <Lock className="w-3 h-3" />
+                  <Lock className="w-3.5 h-3.5" />
                   Saya Admin — Buka Kunci Sekarang
                 </button>
               </div>
@@ -1206,13 +1229,13 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                     }}
                     placeholder="Masukkan Kode Admin"
                     autoFocus
-                    className="flex-1 px-2.5 py-1.5 text-xs st-input border border-amber-300 dark:border-amber-700 rounded-md focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/25 focus:border-[#0B5D3B]"
+                    className="flex-1 min-h-[44px] px-3 py-2 text-sm sm:text-xs st-input border border-amber-300 dark:border-amber-700 rounded-md focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/25 focus:border-[#0B5D3B]"
                   />
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       type="submit"
                       disabled={isUnlockingAdmin}
-                      className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-[#0B5D3B] rounded-md hover:bg-[#09492E] disabled:opacity-60 transition-colors whitespace-nowrap"
+                      className="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-md hover:bg-[#09492E] disabled:opacity-60 transition-colors whitespace-nowrap"
                     >
                       {isUnlockingAdmin ? (
                         <>
@@ -1234,7 +1257,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                         setAdminUnlockError(null);
                         setAdminKeyInput('');
                       }}
-                      className="px-2.5 py-1.5 text-xs font-medium text-amber-900 night:text-[#3b3228] dark:text-amber-200 st-surface border border-amber-300 dark:border-amber-700 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/40 disabled:opacity-50"
+                      className="min-h-[44px] px-3 py-2 text-xs font-medium text-amber-900 night:text-[#3b3228] dark:text-amber-200 st-surface border border-amber-300 dark:border-amber-700 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/40 disabled:opacity-50"
                     >
                       Batal
                     </button>
@@ -1332,7 +1355,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
               <button
                 type="button"
                 onClick={onOpenDirectoryMulti}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#0B5D3B] dark:text-emerald-400 st-surface border border-emerald-300 dark:border-emerald-700 rounded-md hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap shrink-0"
+                className="min-h-[44px] inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#0B5D3B] dark:text-emerald-400 st-surface border border-emerald-300 dark:border-emerald-700 rounded-md hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap shrink-0"
               >
                 <Users className="w-3.5 h-3.5" />
                 Pilih Tim dari Direktori
@@ -1354,7 +1377,7 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                     }
                   )
                 }
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium st-text-secondary st-surface border border-slate-300 night:border-[#d3c096] dark:border-slate-600 rounded-md hover:bg-slate-50 night:hover:bg-[#efe3c4] dark:hover:bg-slate-800 hover:text-[#0B5D3B] hover:border-emerald-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap shrink-0"
+                className="min-h-[44px] inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium st-text-secondary st-surface border border-slate-300 night:border-[#d3c096] dark:border-slate-600 rounded-md hover:bg-slate-50 night:hover:bg-[#efe3c4] dark:hover:bg-slate-800 hover:text-[#0B5D3B] hover:border-emerald-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap shrink-0"
               >
                 <Sparkles className="w-3.5 h-3.5 text-[#0B5D3B] dark:text-emerald-400" />
                 Ekstrak Ulang Mode Teliti
@@ -1365,14 +1388,20 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
       )}
       {zoomPreview && pendingPdf && (
         <div
-          className="fixed inset-0 z-50 bg-slate-900/70 flex items-center justify-center p-3 sm:p-5"
+          className={`fixed inset-0 z-50 bg-slate-900/70 flex items-center justify-center ${
+            isMobileLayout ? 'p-0' : 'p-3 sm:p-5'
+          } ${isForcedMobile ? 'max-w-[430px] mx-auto' : ''}`}
           onClick={() => setZoomPreview(null)}
         >
           <div
-            className="st-surface rounded-lg border shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden"
+            className={`st-surface border shadow-xl w-full flex flex-col overflow-hidden ${
+              isMobileLayout
+                ? 'h-full max-h-none rounded-none border-0'
+                : 'rounded-lg max-w-3xl max-h-[90vh]'
+            }`}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b st-border st-surface-muted">
+            <div className="flex items-center justify-between gap-2 px-3.5 sm:px-4 py-2.5 border-b st-border st-surface-muted">
               <div className="min-w-0">
                 <div className="text-xs font-semibold st-text-primary">
                   Pratinjau Halaman {zoomPreview.pageNum} dari {pendingPdf.totalPages}
@@ -1382,20 +1411,21 @@ export const DasarPdfUploader: React.FC<DasarPdfUploaderProps> = ({
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <label className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-md border st-border st-surface st-text-primary cursor-pointer select-none">
+                <label className="min-h-[40px] inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-md border st-border st-surface st-text-primary cursor-pointer select-none">
                   <input
                     type="checkbox"
                     checked={pendingPdf.selectedPages.includes(zoomPreview.pageNum)}
                     onChange={() => handleToggleSinglePage(zoomPreview.pageNum)}
-                    className="accent-[#0B5D3B] rounded"
+                    className="w-4 h-4 accent-[#0B5D3B] rounded"
                   />
-                  <span>Pilih Halaman {zoomPreview.pageNum}</span>
+                  <span>Pilih Hal. {zoomPreview.pageNum}</span>
                 </label>
                 <button
                   type="button"
                   onClick={() => setZoomPreview(null)}
-                  className="p-1.5 rounded-md st-text-muted hover:text-slate-800 dark:hover:text-slate-100 hover:bg-slate-200/70 dark:hover:bg-slate-700/60"
+                  className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center rounded-md st-text-muted hover:text-slate-800 dark:hover:text-slate-100 hover:bg-slate-200/70 dark:hover:bg-slate-700/60"
                   title="Tutup pratinjau"
+                  aria-label="Tutup pratinjau"
                 >
                   <X className="w-4 h-4" />
                 </button>

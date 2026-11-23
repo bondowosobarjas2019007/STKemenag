@@ -10,15 +10,19 @@ import {
   FilePenLine,
   FileSpreadsheet,
   LogOut,
+  Menu,
+  Monitor,
   Plus,
   Printer,
   RotateCcw,
   Save,
   ShieldCheck,
+  Smartphone,
   Trash2,
   User as UserIcon,
   UserCheck,
   Users,
+  X,
 } from 'lucide-react';
 import { ArsipManager } from './components/ArsipManager';
 import {
@@ -41,6 +45,7 @@ import {
   ThemeSwitcher,
 } from './components/ThemeSwitcher';
 import { TrackingSheetsManager } from './components/TrackingSheetsManager';
+import { useViewport, ViewportMode } from './contexts/ViewportContext';
 import {
   clearAccessToken,
   getAccessToken,
@@ -220,8 +225,17 @@ export default function App() {
     useState<boolean>(false);
   const [docxConfirmError, setDocxConfirmError] = useState<string | null>(null);
 
+  const {
+    viewportMode,
+    setViewportMode,
+    toggleMobileDesktop,
+    isForcedMobile,
+    isMobileLayout,
+  } = useViewport();
+
   const [themeMode, setThemeMode] = useState<ThemeMode>(readInitialThemeMode);
   const [roleMenuOpen, setRoleMenuOpen] = useState<boolean>(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const roleMenuRef = useRef<HTMLDivElement | null>(null);
   const adminWelcomedEmailRef = useRef<string | null>(null);
 
@@ -242,9 +256,14 @@ export default function App() {
   }, [themeMode]);
 
   useEffect(() => {
-    if (!roleMenuOpen) return;
+    setMobileMenuOpen(false);
+  }, [activeTab, isMobileLayout]);
+
+  useEffect(() => {
+    if (!roleMenuOpen && !mobileMenuOpen) return;
     const handlePointerDown = (event: MouseEvent) => {
       if (
+        roleMenuOpen &&
         roleMenuRef.current &&
         !roleMenuRef.current.contains(event.target as Node)
       ) {
@@ -254,6 +273,7 @@ export default function App() {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setRoleMenuOpen(false);
+        setMobileMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handlePointerDown);
@@ -262,7 +282,7 @@ export default function App() {
       document.removeEventListener('mousedown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [roleMenuOpen]);
+  }, [roleMenuOpen, mobileMenuOpen]);
 
   useEffect(() => {
     try {
@@ -1463,200 +1483,502 @@ export default function App() {
     surat.kriteria === 'sendiri' ? 1 : surat.kriteria === 'tiga_orang' ? 2 : 4;
 
   return (
-    <div className="min-h-screen flex flex-col st-app">
-      {/* TOP BAR CONTRACT: 3 zones on desktop, 2-row accessible nav on non-desktop (< lg) */}
-      <header className="no-print sticky top-0 z-30 st-surface border-b px-3 sm:px-6 py-2 lg:py-0 lg:h-14 flex flex-wrap lg:flex-nowrap items-center justify-between gap-x-3 gap-y-1.5 lg:gap-6">
-        <a
-          href="#editor"
-          onClick={(e) => {
-            e.preventDefault();
-            setActiveTab('editor');
-          }}
-          className="order-1 font-display text-sm sm:text-base font-bold tracking-tight st-text-primary whitespace-nowrap shrink-0"
-        >
-          SiTugas Kemenag Jember
-        </a>
+    <div
+      className={
+        isForcedMobile
+          ? 'min-h-screen st-desk flex justify-center overflow-x-hidden print:block print:bg-white'
+          : 'min-h-screen flex flex-col st-app overflow-x-hidden'
+      }
+    >
+      <div
+        className={
+          isForcedMobile
+            ? 'w-full max-w-[430px] min-h-screen flex flex-col st-app border-x st-border shadow-xl relative print:max-w-none print:border-0 print:shadow-none'
+            : 'flex-1 flex flex-col min-h-screen'
+        }
+      >
+        {isMobileLayout ? (
+          <>
+            <header className="no-print sticky top-0 z-30 st-surface border-b px-2.5 py-1.5 flex items-center justify-between gap-1.5">
+              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                <button
+                  type="button"
+                  onClick={() => setMobileMenuOpen((open) => !open)}
+                  aria-label={mobileMenuOpen ? 'Tutup menu navigasi' : 'Buka menu navigasi'}
+                  aria-expanded={mobileMenuOpen}
+                  className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center rounded-lg border st-surface-muted st-text-primary hover:opacity-90 shrink-0"
+                >
+                  {mobileMenuOpen ? (
+                    <X className="w-5 h-5" />
+                  ) : (
+                    <Menu className="w-5 h-5" />
+                  )}
+                </button>
+                <a
+                  href="#editor"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setActiveTab('editor');
+                    setMobileMenuOpen(false);
+                  }}
+                  className="font-display text-sm font-bold tracking-tight st-text-primary truncate min-w-0"
+                >
+                  SiTugas Kemenag
+                </a>
+              </div>
 
-        <nav
-          aria-label="Menu utama"
-          className="order-3 lg:order-2 w-full lg:w-auto lg:min-w-0 border-t border-slate-100 night:border-[#e4d5b3] dark:border-slate-700/70 lg:border-t-0 pt-1.5 lg:pt-0 flex items-center justify-between sm:justify-start gap-2.5 sm:gap-5 lg:gap-6 text-[11px] sm:text-xs lg:text-sm font-medium overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
-          <button
-            type="button"
-            onClick={() => setActiveTab('editor')}
-            className={`py-1.5 lg:py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
-              activeTab === 'editor'
-                ? 'text-[#0B5D3B] dark:text-emerald-400 border-[#0B5D3B] dark:border-emerald-400'
-                : 'st-text-secondary border-transparent hover:text-slate-900 night:hover:text-[#3b3228] dark:hover:text-slate-100'
-            }`}
-          >
-            Editor Surat
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('pegawai')}
-            className={`py-1.5 lg:py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
-              activeTab === 'pegawai'
-                ? 'text-[#0B5D3B] dark:text-emerald-400 border-[#0B5D3B] dark:border-emerald-400'
-                : 'st-text-secondary border-transparent hover:text-slate-900 night:hover:text-[#3b3228] dark:hover:text-slate-100'
-            }`}
-          >
-            Data Pegawai ({directory.length.toLocaleString('id-ID')})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('sheets')}
-            className={`py-1.5 lg:py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
-              activeTab === 'sheets'
-                ? 'text-[#0B5D3B] dark:text-emerald-400 border-[#0B5D3B] dark:border-emerald-400'
-                : 'st-text-secondary border-transparent hover:text-slate-900 night:hover:text-[#3b3228] dark:hover:text-slate-100'
-            }`}
-          >
-            Tracking Sheets
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('arsip')}
-            className={`py-1.5 lg:py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
-              activeTab === 'arsip'
-                ? 'text-[#0B5D3B] dark:text-emerald-400 border-[#0B5D3B] dark:border-emerald-400'
-                : 'st-text-secondary border-transparent hover:text-slate-900 night:hover:text-[#3b3228] dark:hover:text-slate-100'
-            }`}
-          >
-            Daftar Draft ({arsipList.length})
-          </button>
-        </nav>
+              <div className="flex items-center gap-1 shrink-0">
+                <ThemeSwitcher themeMode={themeMode} onChange={setThemeMode} />
 
-        <div className="order-2 lg:order-3 flex items-center gap-1.5 sm:gap-2 shrink-0">
-          <ThemeSwitcher themeMode={themeMode} onChange={setThemeMode} />
+                <button
+                  type="button"
+                  onClick={toggleMobileDesktop}
+                  title="Beralih ke Desktop View"
+                  aria-label="Beralih ke Desktop View"
+                  className="min-h-[38px] inline-flex items-center gap-1 px-2 py-1.5 text-[11px] font-semibold rounded-lg border st-surface-muted st-text-primary hover:opacity-90 whitespace-nowrap shrink-0"
+                >
+                  <Monitor className="w-3.5 h-3.5 text-[#0B5D3B] dark:text-emerald-400 shrink-0" />
+                  <span className={isForcedMobile ? 'inline' : 'hidden min-[410px]:inline'}>
+                    Desktop View
+                  </span>
+                </button>
 
-          {/* INDIKATOR ROLE PENGGUNA (OPERATOR VS ADMIN) */}
-          <div className="relative" ref={roleMenuRef}>
-            <button
-              type="button"
-              onClick={() => setRoleMenuOpen((open) => !open)}
-              aria-expanded={roleMenuOpen}
-              aria-haspopup="dialog"
-              title={
-                isAdminMode
-                  ? `Mode: Admin (${googleUser?.email || OWNER_GOOGLE_EMAIL}) — Akses penuh aktif`
-                  : 'Akses Operator — Siap membuat & mencatat Surat Tugas'
-              }
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
-                isAdminMode
-                  ? 'bg-amber-50 night:bg-amber-200/60 dark:bg-amber-950/60 text-amber-900 night:text-[#4e340b] dark:text-amber-300 border-amber-300 dark:border-amber-700 font-semibold hover:bg-amber-100 night:hover:bg-amber-200/80 dark:hover:bg-amber-950/80'
-                  : 'bg-sky-50 night:bg-emerald-900/15 dark:bg-sky-950/50 text-sky-800 night:text-[#0B5D3B] dark:text-sky-300 border-sky-200 night:border-emerald-700/35 dark:border-sky-800 font-medium hover:bg-sky-100 night:hover:bg-emerald-900/25 dark:hover:bg-sky-950/70'
-              }`}
-            >
-              {isAdminMode ? (
-                <Crown className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-              ) : (
-                <UserIcon className="w-3.5 h-3.5 shrink-0" />
-              )}
-              <span className="hidden md:inline">
-                {isAdminMode ? 'Mode: Admin' : 'Mode: Operator'}
-              </span>
-              <span className="md:hidden">
-                {isAdminMode ? 'Admin' : 'Operator'}
-              </span>
-            </button>
-
-            {roleMenuOpen && (
-              <div
-                role="dialog"
-                aria-label="Status peran pengguna"
-                className="absolute right-0 mt-2 w-72 st-surface border rounded-xl shadow-xl p-3.5 z-50 space-y-3"
-              >
-                <div className="flex items-start gap-2.5">
-                  <div
-                    className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                <div className="relative" ref={roleMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setRoleMenuOpen((open) => !open)}
+                    aria-expanded={roleMenuOpen}
+                    aria-haspopup="dialog"
+                    aria-label={isAdminMode ? 'Mode: Admin' : 'Mode: Operator'}
+                    title={
                       isAdminMode
-                        ? 'bg-amber-100 night:bg-amber-200/70 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300'
-                        : 'bg-sky-100 night:bg-emerald-900/20 dark:bg-sky-950/70 text-sky-700 night:text-[#0B5D3B] dark:text-sky-300'
+                        ? `Mode: Admin (${googleUser?.email || OWNER_GOOGLE_EMAIL}) — Akses penuh aktif`
+                        : 'Mode: Operator — Siap membuat & mencatat Surat Tugas'
+                    }
+                    className={`min-h-[38px] inline-flex items-center gap-1 px-2 py-1.5 text-[11px] rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
+                      isAdminMode
+                        ? 'bg-amber-50 night:bg-amber-200/60 dark:bg-amber-950/60 text-amber-900 night:text-[#4e340b] dark:text-amber-300 border-amber-300 dark:border-amber-700 font-semibold'
+                        : 'bg-sky-50 night:bg-emerald-900/15 dark:bg-sky-950/50 text-sky-800 night:text-[#0B5D3B] dark:text-sky-300 border-sky-200 night:border-emerald-700/35 dark:border-sky-800 font-medium'
                     }`}
                   >
                     {isAdminMode ? (
-                      <Crown className="w-4 h-4" />
+                      <Crown className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
                     ) : (
-                      <UserIcon className="w-4 h-4" />
+                      <UserIcon className="w-3.5 h-3.5 shrink-0" />
                     )}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-xs font-semibold st-text-primary flex items-center gap-1.5">
-                      <span>{isAdminMode ? 'Mode: Admin' : 'Mode: Operator'}</span>
-                      {isAdminMode && (
-                        <ShieldCheck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-                      )}
+                    <span className="hidden min-[380px]:inline">
+                      {isAdminMode ? 'Admin' : 'Operator'}
+                    </span>
+                  </button>
+
+                  {roleMenuOpen && (
+                    <div
+                      role="dialog"
+                      aria-label="Status peran pengguna"
+                      className="absolute right-0 mt-2 w-72 max-w-[calc(100vw-1.5rem)] st-surface border rounded-xl shadow-xl p-3.5 z-50 space-y-3"
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <div
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                            isAdminMode
+                              ? 'bg-amber-100 night:bg-amber-200/70 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300'
+                              : 'bg-sky-100 night:bg-emerald-900/20 dark:bg-sky-950/70 text-sky-700 night:text-[#0B5D3B] dark:text-sky-300'
+                          }`}
+                        >
+                          {isAdminMode ? (
+                            <Crown className="w-4 h-4" />
+                          ) : (
+                            <UserIcon className="w-4 h-4" />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold st-text-primary flex items-center gap-1.5">
+                            <span>{isAdminMode ? 'Mode: Admin' : 'Mode: Operator'}</span>
+                            {isAdminMode && (
+                              <ShieldCheck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                            )}
+                          </div>
+                          <p className="text-[11px] st-text-muted mt-0.5 leading-relaxed">
+                            {isAdminMode
+                              ? `${googleUser?.email || OWNER_GOOGLE_EMAIL} — Akses penuh aktif (Proteksi & Jembatan Pemilik, Spreadsheet, dan Buka Kunci Sistem).`
+                              : 'Akses Operator — Siap membuat & mencatat Surat Tugas ke Worksheet.'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t st-border space-y-2">
+                        {isAdminMode ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleGoogleLogout()}
+                            className="w-full min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-red-700 dark:text-red-300 bg-red-50 night:bg-red-100/70 dark:bg-red-950/50 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-100 dark:hover:bg-red-950/70 transition-colors"
+                          >
+                            <LogOut className="w-3.5 h-3.5" />
+                            Keluar Mode Admin
+                          </button>
+                        ) : (
+                          <div className="flex flex-col gap-2">
+                            <GoogleSignInButton
+                              onClick={() => void handleGoogleLogin()}
+                              disabled={isGoogleConnecting}
+                              label={
+                                isGoogleConnecting
+                                  ? 'Menghubungkan...'
+                                  : 'Masuk Admin (Google)'
+                              }
+                            />
+                          </div>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRoleMenuOpen(false);
+                            setActiveTab('sheets');
+                          }}
+                          className="w-full min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium st-text-secondary st-surface-muted border rounded-lg hover:opacity-90 transition-colors"
+                        >
+                          <FileSpreadsheet className="w-3.5 h-3.5 text-[#0B5D3B] dark:text-emerald-400" />
+                          Buka Tracking Sheets
+                        </button>
+                      </div>
                     </div>
-                    <p className="text-[11px] st-text-muted mt-0.5 leading-relaxed">
-                      {isAdminMode
-                        ? `${googleUser?.email || OWNER_GOOGLE_EMAIL} — Akses penuh aktif (Proteksi & Jembatan Pemilik, Spreadsheet, dan Buka Kunci Sistem).`
-                        : 'Akses Operator — Siap membuat & mencatat Surat Tugas ke Worksheet.'}
-                    </p>
+                  )}
+                </div>
+              </div>
+            </header>
+
+            {mobileMenuOpen && (
+              <div className="no-print st-surface border-b st-border shadow-lg z-20 px-3 py-3 space-y-3.5 max-h-[calc(100vh-3.75rem)] overflow-y-auto">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wide st-text-muted mb-1.5">
+                    Menu Utama
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(
+                      [
+                        ['editor', 'Editor Surat'],
+                        ['pegawai', `Data Pegawai (${directory.length.toLocaleString('id-ID')})`],
+                        ['sheets', 'Tracking Sheets'],
+                        ['arsip', `Daftar Draft (${arsipList.length})`],
+                      ] as const
+                    ).map(([tabId, label]) => (
+                      <button
+                        key={tabId}
+                        type="button"
+                        onClick={() => {
+                          setActiveTab(tabId);
+                          setMobileMenuOpen(false);
+                        }}
+                        className={`min-h-[44px] px-3 py-2 text-xs font-semibold rounded-lg border text-left transition-colors ${
+                          activeTab === tabId
+                            ? 'bg-[#0B5D3B] text-white border-[#0B5D3B]'
+                            : 'st-surface-muted st-text-primary hover:opacity-90'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
-                <div className="pt-2 border-t st-border space-y-2">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wide st-text-muted mb-1.5">
+                    Mode Layar
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5 p-1 st-surface-muted border rounded-lg">
+                    {(
+                      [
+                        ['auto', 'Otomatis'],
+                        ['mobile', 'Mobile'],
+                        ['desktop', 'Desktop'],
+                      ] as Array<[ViewportMode, string]>
+                    ).map(([mode, label]) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => {
+                          setViewportMode(mode);
+                          setMobileMenuOpen(false);
+                        }}
+                        className={`min-h-[40px] px-2 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                          viewportMode === mode
+                            ? 'bg-[#0B5D3B] text-white shadow-xs'
+                            : 'st-text-secondary hover:opacity-90'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t st-border flex flex-col gap-2">
+                  <div className="flex items-center justify-between gap-2 text-xs st-text-secondary">
+                    <span className="font-semibold st-text-primary">
+                      {isAdminMode ? 'Mode: Admin' : 'Mode: Operator'}
+                    </span>
+                    <span className="text-[11px] st-text-muted truncate">
+                      {isAdminMode
+                        ? googleUser?.email || OWNER_GOOGLE_EMAIL
+                        : 'Operator Surat Tugas'}
+                    </span>
+                  </div>
                   {isAdminMode ? (
                     <button
                       type="button"
-                      onClick={() => void handleGoogleLogout()}
-                      className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-red-700 dark:text-red-300 bg-red-50 night:bg-red-100/70 dark:bg-red-950/50 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-100 dark:hover:bg-red-950/70 transition-colors"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        void handleGoogleLogout();
+                      }}
+                      className="w-full min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 rounded-lg"
                     >
                       <LogOut className="w-3.5 h-3.5" />
                       Keluar Mode Admin
                     </button>
                   ) : (
-                    <div className="flex flex-col gap-2">
-                      <GoogleSignInButton
-                        onClick={() => void handleGoogleLogin()}
-                        disabled={isGoogleConnecting}
-                        label={
-                          isGoogleConnecting
-                            ? 'Menghubungkan...'
-                            : 'Masuk Admin (Google)'
-                        }
-                      />
-                    </div>
+                    <GoogleSignInButton
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        void handleGoogleLogin();
+                      }}
+                      disabled={isGoogleConnecting}
+                      label={
+                        isGoogleConnecting
+                          ? 'Menghubungkan...'
+                          : 'Masuk Admin (Google)'
+                      }
+                    />
                   )}
-
                   <button
                     type="button"
+                    disabled={isSyncingSheets}
                     onClick={() => {
-                      setRoleMenuOpen(false);
-                      setActiveTab('sheets');
+                      setMobileMenuOpen(false);
+                      void handlePrintPdf();
                     }}
-                    className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium st-text-secondary st-surface-muted border rounded-lg hover:opacity-90 transition-colors"
+                    className="w-full min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60"
                   >
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-[#0B5D3B] dark:text-emerald-400" />
-                    Buka Tracking Sheets
+                    <Printer className="w-4 h-4" />
+                    {isSyncingSheets ? 'Menyimpan...' : 'Cetak / PDF'}
                   </button>
                 </div>
               </div>
             )}
-          </div>
+          </>
+        ) : (
+          /* TOP BAR CONTRACT: 3 zones on desktop/tablet */
+          <header className="no-print sticky top-0 z-30 st-surface border-b px-3 sm:px-6 py-2 lg:py-0 lg:h-14 flex flex-wrap lg:flex-nowrap items-center justify-between gap-x-3 gap-y-1.5 lg:gap-4">
+            <a
+              href="#editor"
+              onClick={(e) => {
+                e.preventDefault();
+                setActiveTab('editor');
+              }}
+              className="order-1 font-display text-sm sm:text-base font-bold tracking-tight st-text-primary whitespace-nowrap shrink-0"
+            >
+              SiTugas Kemenag Jember
+            </a>
 
-          <button
-            type="button"
-            disabled={isSyncingSheets}
-            onClick={() => void handlePrintPdf()}
-            className="inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
+            <nav
+              aria-label="Menu utama"
+              className="order-3 lg:order-2 w-full lg:w-auto lg:min-w-0 border-t border-slate-100 night:border-[#e4d5b3] dark:border-slate-700/70 lg:border-t-0 pt-1.5 lg:pt-0 flex items-center justify-between sm:justify-start gap-2.5 sm:gap-5 lg:gap-5 text-[11px] sm:text-xs lg:text-sm font-medium overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            >
+              <button
+                type="button"
+                onClick={() => setActiveTab('editor')}
+                className={`py-1.5 lg:py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
+                  activeTab === 'editor'
+                    ? 'text-[#0B5D3B] dark:text-emerald-400 border-[#0B5D3B] dark:border-emerald-400'
+                    : 'st-text-secondary border-transparent hover:text-slate-900 night:hover:text-[#3b3228] dark:hover:text-slate-100'
+                }`}
+              >
+                Editor Surat
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('pegawai')}
+                className={`py-1.5 lg:py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
+                  activeTab === 'pegawai'
+                    ? 'text-[#0B5D3B] dark:text-emerald-400 border-[#0B5D3B] dark:border-emerald-400'
+                    : 'st-text-secondary border-transparent hover:text-slate-900 night:hover:text-[#3b3228] dark:hover:text-slate-100'
+                }`}
+              >
+                Data Pegawai ({directory.length.toLocaleString('id-ID')})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('sheets')}
+                className={`py-1.5 lg:py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
+                  activeTab === 'sheets'
+                    ? 'text-[#0B5D3B] dark:text-emerald-400 border-[#0B5D3B] dark:border-emerald-400'
+                    : 'st-text-secondary border-transparent hover:text-slate-900 night:hover:text-[#3b3228] dark:hover:text-slate-100'
+                }`}
+              >
+                Tracking Sheets
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('arsip')}
+                className={`py-1.5 lg:py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
+                  activeTab === 'arsip'
+                    ? 'text-[#0B5D3B] dark:text-emerald-400 border-[#0B5D3B] dark:border-emerald-400'
+                    : 'st-text-secondary border-transparent hover:text-slate-900 night:hover:text-[#3b3228] dark:hover:text-slate-100'
+                }`}
+              >
+                Daftar Draft ({arsipList.length})
+              </button>
+            </nav>
+
+            <div className="order-2 lg:order-3 flex items-center gap-1.5 sm:gap-2 shrink-0">
+              <ThemeSwitcher themeMode={themeMode} onChange={setThemeMode} />
+
+              <button
+                type="button"
+                onClick={toggleMobileDesktop}
+                title={`Mode Layar: ${
+                  viewportMode === 'desktop' ? 'Desktop' : 'Otomatis'
+                } — Klik untuk pratinjau Mobile View`}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-lg border st-surface-muted st-text-primary hover:opacity-90 transition-colors whitespace-nowrap shrink-0"
+              >
+                <Smartphone className="w-3.5 h-3.5 text-[#0B5D3B] dark:text-emerald-400 shrink-0" />
+                <span className="hidden sm:inline">Mobile View</span>
+              </button>
+
+              {/* INDIKATOR ROLE PENGGUNA (OPERATOR VS ADMIN) */}
+              <div className="relative" ref={roleMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setRoleMenuOpen((open) => !open)}
+                  aria-expanded={roleMenuOpen}
+                  aria-haspopup="dialog"
+                  title={
+                    isAdminMode
+                      ? `Mode: Admin (${googleUser?.email || OWNER_GOOGLE_EMAIL}) — Akses penuh aktif`
+                      : 'Akses Operator — Siap membuat & mencatat Surat Tugas'
+                  }
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
+                    isAdminMode
+                      ? 'bg-amber-50 night:bg-amber-200/60 dark:bg-amber-950/60 text-amber-900 night:text-[#4e340b] dark:text-amber-300 border-amber-300 dark:border-amber-700 font-semibold hover:bg-amber-100 night:hover:bg-amber-200/80 dark:hover:bg-amber-950/80'
+                      : 'bg-sky-50 night:bg-emerald-900/15 dark:bg-sky-950/50 text-sky-800 night:text-[#0B5D3B] dark:text-sky-300 border-sky-200 night:border-emerald-700/35 dark:border-sky-800 font-medium hover:bg-sky-100 night:hover:bg-emerald-900/25 dark:hover:bg-sky-950/70'
+                  }`}
+                >
+                  {isAdminMode ? (
+                    <Crown className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                  ) : (
+                    <UserIcon className="w-3.5 h-3.5 shrink-0" />
+                  )}
+                  <span className="hidden md:inline">
+                    {isAdminMode ? 'Mode: Admin' : 'Mode: Operator'}
+                  </span>
+                  <span className="md:hidden">
+                    {isAdminMode ? 'Admin' : 'Operator'}
+                  </span>
+                </button>
+
+                {roleMenuOpen && (
+                  <div
+                    role="dialog"
+                    aria-label="Status peran pengguna"
+                    className="absolute right-0 mt-2 w-72 st-surface border rounded-xl shadow-xl p-3.5 z-50 space-y-3"
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <div
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                          isAdminMode
+                            ? 'bg-amber-100 night:bg-amber-200/70 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300'
+                            : 'bg-sky-100 night:bg-emerald-900/20 dark:bg-sky-950/70 text-sky-700 night:text-[#0B5D3B] dark:text-sky-300'
+                        }`}
+                      >
+                        {isAdminMode ? (
+                          <Crown className="w-4 h-4" />
+                        ) : (
+                          <UserIcon className="w-4 h-4" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold st-text-primary flex items-center gap-1.5">
+                          <span>{isAdminMode ? 'Mode: Admin' : 'Mode: Operator'}</span>
+                          {isAdminMode && (
+                            <ShieldCheck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                          )}
+                        </div>
+                        <p className="text-[11px] st-text-muted mt-0.5 leading-relaxed">
+                          {isAdminMode
+                            ? `${googleUser?.email || OWNER_GOOGLE_EMAIL} — Akses penuh aktif (Proteksi & Jembatan Pemilik, Spreadsheet, dan Buka Kunci Sistem).`
+                            : 'Akses Operator — Siap membuat & mencatat Surat Tugas ke Worksheet.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t st-border space-y-2">
+                      {isAdminMode ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleGoogleLogout()}
+                          className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-red-700 dark:text-red-300 bg-red-50 night:bg-red-100/70 dark:bg-red-950/50 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-100 dark:hover:bg-red-950/70 transition-colors"
+                        >
+                          <LogOut className="w-3.5 h-3.5" />
+                          Keluar Mode Admin
+                        </button>
+                      ) : (
+                        <div className="flex flex-col gap-2">
+                          <GoogleSignInButton
+                            onClick={() => void handleGoogleLogin()}
+                            disabled={isGoogleConnecting}
+                            label={
+                              isGoogleConnecting
+                                ? 'Menghubungkan...'
+                                : 'Masuk Admin (Google)'
+                            }
+                          />
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRoleMenuOpen(false);
+                          setActiveTab('sheets');
+                        }}
+                        className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium st-text-secondary st-surface-muted border rounded-lg hover:opacity-90 transition-colors"
+                      >
+                        <FileSpreadsheet className="w-3.5 h-3.5 text-[#0B5D3B] dark:text-emerald-400" />
+                        Buka Tracking Sheets
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <button
+                type="button"
+                disabled={isSyncingSheets}
+                onClick={() => void handlePrintPdf()}
+                className="inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">
+                  {isSyncingSheets ? 'Menyimpan...' : 'Cetak / PDF'}
+                </span>
+              </button>
+            </div>
+          </header>
+        )}
+
+        {/* TOAST FEEDBACK */}
+        {toastMessage && (
+          <div
+            className={`no-print fixed z-50 flex items-center gap-2 px-4 py-2.5 bg-slate-900 night:bg-[#3b3228] dark:bg-slate-800 dark:border dark:border-slate-700 text-white text-xs font-medium rounded-lg shadow-lg ${
+              isMobileLayout && activeTab === 'editor'
+                ? 'bottom-[4.5rem] left-3 right-3 max-w-[400px] mx-auto'
+                : 'bottom-5 right-5 max-w-md'
+            }`}
           >
-            <Printer className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">
-              {isSyncingSheets ? 'Menyimpan...' : 'Cetak / PDF'}
-            </span>
-          </button>
-        </div>
-      </header>
-
-      {/* TOAST FEEDBACK */}
-      {toastMessage && (
-        <div className="no-print fixed bottom-5 right-5 z-50 flex items-center gap-2 px-4 py-2.5 bg-slate-900 night:bg-[#3b3228] dark:bg-slate-800 dark:border dark:border-slate-700 text-white text-xs font-medium rounded-lg shadow-lg max-w-md">
-          <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span>{toastMessage}</span>
-        </div>
-      )}
+            <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>{toastMessage}</span>
+          </div>
+        )}
 
       {/* MAIN CONTENT */}
       {activeTab === 'pegawai' && (
@@ -1814,45 +2136,23 @@ export default function App() {
 
       {/* EDITOR VIEW (stays mounted during print if active, or print preview renders cleanly) */}
       <main
-        className={`flex-1 flex flex-col lg:grid lg:grid-cols-[490px_1fr] xl:grid-cols-[520px_1fr] ${
-          activeTab !== 'editor' ? 'hidden print:block' : ''
-        }`}
+        className={`flex-1 flex flex-col ${
+          !isMobileLayout
+            ? 'lg:grid lg:grid-cols-[490px_1fr] xl:grid-cols-[520px_1fr]'
+            : ''
+        } ${activeTab !== 'editor' ? 'hidden print:block' : ''}`}
       >
-        {/* MOBILE PANE SWITCHER */}
-        <div className="no-print lg:hidden st-surface border-b px-4 py-2 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setMobilePane('form')}
-            className={`flex-1 inline-flex items-center justify-center gap-2 py-2 text-xs font-semibold rounded-lg transition-colors ${
-              mobilePane === 'form'
-                ? 'bg-[#0B5D3B] text-white'
-                : 'st-surface-muted st-text-secondary'
-            }`}
-          >
-            <FilePenLine className="w-3.5 h-3.5" />
-            Form Isian
-          </button>
-          <button
-            type="button"
-            onClick={() => setMobilePane('preview')}
-            className={`flex-1 inline-flex items-center justify-center gap-2 py-2 text-xs font-semibold rounded-lg transition-colors ${
-              mobilePane === 'preview'
-                ? 'bg-[#0B5D3B] text-white'
-                : 'st-surface-muted st-text-secondary'
-            }`}
-          >
-            <Eye className="w-3.5 h-3.5" />
-            Pratinjau A4
-          </button>
-        </div>
-
         {/* LEFT PANE: FORM STUDIO */}
         <section
-          className={`no-print st-surface border-r lg:h-[calc(100vh-3.5rem)] lg:overflow-y-auto ${
-            mobilePane === 'form' ? 'block' : 'hidden lg:block'
+          className={`no-print st-surface ${
+            !isMobileLayout
+              ? 'border-r lg:h-[calc(100vh-3.5rem)] lg:overflow-y-auto block'
+              : mobilePane === 'form'
+                ? 'block flex-1'
+                : 'hidden'
           }`}
         >
-          <div className="p-5 space-y-6">
+          <div className={isMobileLayout ? 'p-3.5 space-y-5' : 'p-5 space-y-6'}>
             {/* 0. DETEKSI OTOMATIS DARI FILE PDF DASAR */}
             <DasarPdfUploader
               directory={directory}
@@ -1895,7 +2195,7 @@ export default function App() {
                     key={key}
                     type="button"
                     onClick={() => handleKriteriaChange(key)}
-                    className={`py-2 px-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                    className={`min-h-[40px] py-2 px-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
                       surat.kriteria === key
                         ? 'st-surface text-[#0B5D3B] dark:text-emerald-400 shadow-xs'
                         : 'st-text-secondary hover:text-slate-900 night:hover:text-[#3b3228] dark:hover:text-slate-100'
@@ -2084,20 +2384,20 @@ export default function App() {
 
             {/* 4. DAFTAR PEGAWAI YANG DITUGASKAN */}
             <div className="space-y-3">
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h2 className="text-xs font-semibold st-text-primary">
                     4. Data Pegawai ({surat.pegawaiList.length} Orang)
                   </h2>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={() => {
                       setDirTargetIndex(surat.kriteria === 'sendiri' ? 0 : null);
                       setDirModalOpen(true);
                     }}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-950/80 rounded-md transition-colors whitespace-nowrap shrink-0"
+                    className="min-h-[40px] inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-950/80 rounded-md transition-colors whitespace-nowrap shrink-0"
                   >
                     <Users className="w-3.5 h-3.5" />
                     Pilih dari Direktori
@@ -2106,7 +2406,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={handleAddPegawaiSlot}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium st-text-secondary st-surface-muted hover:opacity-90 rounded-md transition-colors whitespace-nowrap shrink-0"
+                      className="min-h-[40px] inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium st-text-secondary st-surface-muted hover:opacity-90 rounded-md transition-colors whitespace-nowrap shrink-0"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       Tambah
@@ -2430,11 +2730,17 @@ export default function App() {
             </div>
 
             {/* EDITOR ACTION FOOTER */}
-            <div className="pt-3 border-t st-border flex flex-wrap items-center justify-between gap-2.5">
+            <div
+              className={`pt-3 border-t st-border ${
+                isMobileLayout
+                  ? 'grid grid-cols-2 gap-2.5'
+                  : 'flex flex-wrap items-center justify-between gap-2.5'
+              }`}
+            >
               <button
                 type="button"
                 onClick={handleSaveToDraft}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold st-text-primary st-surface border rounded-lg hover:bg-slate-50 night:hover:bg-[#efe3c4] dark:hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0"
+                className="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold st-text-primary st-surface border rounded-lg hover:bg-slate-50 night:hover:bg-[#efe3c4] dark:hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0"
               >
                 <Save className="w-3.5 h-3.5 text-[#0B5D3B] dark:text-emerald-400" />
                 Simpan ke Draft
@@ -2443,7 +2749,7 @@ export default function App() {
                 type="button"
                 disabled={isExportingDocx || isSyncingSheets || isProcessingDocxConfirm}
                 onClick={handleExportDocx}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
+                className="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
               >
                 <Download className="w-3.5 h-3.5" />
                 {isExportingDocx ? 'Menyiapkan...' : 'Unduh .docx'}
@@ -2454,61 +2760,77 @@ export default function App() {
 
         {/* RIGHT PANE: LIVE A4 PREVIEW CANVAS */}
         <section
-          className={`st-desk flex flex-col lg:h-[calc(100vh-3.5rem)] print-only-container ${
-            mobilePane === 'preview' ? 'flex' : 'hidden lg:flex'
+          className={`st-desk flex flex-col print-only-container ${
+            !isMobileLayout
+              ? 'lg:h-[calc(100vh-3.5rem)] flex'
+              : mobilePane === 'preview'
+                ? 'flex flex-1'
+                : 'hidden'
           }`}
         >
           {/* WORKSPACE TOOLBAR */}
-          <div className="no-print st-surface backdrop-blur-xs border-b px-5 py-2.5 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2 overflow-x-auto">
+          <div
+            className={`no-print st-surface backdrop-blur-xs border-b flex flex-wrap items-center justify-between gap-2.5 ${
+              isMobileLayout ? 'px-3 py-2.5' : 'px-5 py-2.5'
+            }`}
+          >
+            <div className="flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-w-full">
               <span className="text-xs font-medium st-text-muted whitespace-nowrap shrink-0">
                 Muat Contoh:
               </span>
               <button
                 type="button"
                 onClick={() => handleLoadSample('sendiri')}
-                className="px-2.5 py-1.5 text-xs font-medium st-text-secondary st-surface-muted hover:opacity-90 rounded-md transition-colors whitespace-nowrap shrink-0"
+                className="min-h-[38px] px-2.5 py-1.5 text-xs font-medium st-text-secondary st-surface-muted hover:opacity-90 rounded-md transition-colors whitespace-nowrap shrink-0"
               >
                 1 Orang
               </button>
               <button
                 type="button"
                 onClick={() => handleLoadSample('tiga_orang')}
-                className="px-2.5 py-1.5 text-xs font-medium st-text-secondary st-surface-muted hover:opacity-90 rounded-md transition-colors whitespace-nowrap shrink-0"
+                className="min-h-[38px] px-2.5 py-1.5 text-xs font-medium st-text-secondary st-surface-muted hover:opacity-90 rounded-md transition-colors whitespace-nowrap shrink-0"
               >
                 2-3 Orang
               </button>
               <button
                 type="button"
                 onClick={() => handleLoadSample('terlampir')}
-                className="px-2.5 py-1.5 text-xs font-medium st-text-secondary st-surface-muted hover:opacity-90 rounded-md transition-colors whitespace-nowrap shrink-0"
+                className="min-h-[38px] px-2.5 py-1.5 text-xs font-medium st-text-secondary st-surface-muted hover:opacity-90 rounded-md transition-colors whitespace-nowrap shrink-0"
               >
                 &gt; 3 Terlampir
               </button>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="hidden sm:flex items-center gap-1 p-0.5 st-surface-muted rounded-md border">
-                {[0.7, 0.85, 1].map((z) => (
-                  <button
-                    key={z}
-                    type="button"
-                    onClick={() => setZoom(z)}
-                    className={`px-2 py-1 text-xs font-mono-tabular rounded transition-colors ${
-                      zoom === z
-                        ? 'st-surface st-text-primary shadow-xs font-medium'
-                        : 'st-text-muted hover:text-slate-900 night:hover:text-[#3b3228] dark:hover:text-slate-100'
-                    }`}
-                  >
-                    {Math.round(z * 100)}%
-                  </button>
-                ))}
-              </div>
+            <div
+              className={
+                isMobileLayout
+                  ? 'grid grid-cols-2 gap-2 w-full'
+                  : 'flex flex-wrap items-center gap-2'
+              }
+            >
+              {!isMobileLayout && (
+                <div className="hidden sm:flex items-center gap-1 p-0.5 st-surface-muted rounded-md border">
+                  {[0.7, 0.85, 1].map((z) => (
+                    <button
+                      key={z}
+                      type="button"
+                      onClick={() => setZoom(z)}
+                      className={`px-2 py-1 text-xs font-mono-tabular rounded transition-colors ${
+                        zoom === z
+                          ? 'st-surface st-text-primary shadow-xs font-medium'
+                          : 'st-text-muted hover:text-slate-900 night:hover:text-[#3b3228] dark:hover:text-slate-100'
+                      }`}
+                    >
+                      {Math.round(z * 100)}%
+                    </button>
+                  ))}
+                </div>
+              )}
 
               <button
                 type="button"
                 onClick={handleSaveToDraft}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium st-text-primary st-surface border rounded-lg hover:bg-slate-50 night:hover:bg-[#efe3c4] dark:hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0"
+                className="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium st-text-primary st-surface border rounded-lg hover:bg-slate-50 night:hover:bg-[#efe3c4] dark:hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0"
               >
                 <Save className="w-3.5 h-3.5 text-[#0B5D3B] dark:text-emerald-400" />
                 Simpan ke Draft
@@ -2518,21 +2840,25 @@ export default function App() {
                 type="button"
                 disabled={isSyncingSheets}
                 onClick={() => void syncDraftToGoogleSheets(surat)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 border border-emerald-200 night:border-emerald-700/35 dark:border-emerald-800 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-950/75 disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
+                className="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 border border-emerald-200 night:border-emerald-700/35 dark:border-emerald-800 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-950/75 disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
               >
                 <FileSpreadsheet className="w-3.5 h-3.5" />
                 {isSyncingSheets
                   ? 'Menyimpan...'
                   : lastSyncedSignature === computeSuratSignature(surat)
                     ? 'Tercatat di Sheets'
-                    : 'Simpan ke Sheets (Wajib)'}
+                    : isMobileLayout
+                      ? 'Simpan ke Sheets'
+                      : 'Simpan ke Sheets (Wajib)'}
               </button>
 
               <button
                 type="button"
                 disabled={isExportingDocx || isSyncingSheets || isProcessingDocxConfirm}
                 onClick={handleExportDocx}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
+                className={`min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60 transition-colors whitespace-nowrap shrink-0 ${
+                  isMobileLayout ? 'col-span-2' : ''
+                }`}
               >
                 <Download className="w-3.5 h-3.5" />
                 {isExportingDocx
@@ -2545,10 +2871,51 @@ export default function App() {
           </div>
 
           {/* A4 DOCUMENT VIEWPORT */}
-          <div className="flex-1 overflow-auto p-6 sm:p-8 flex justify-center items-start print-only-container">
-            <SuratPreview data={surat} zoom={zoom} />
+          <div
+            className={`flex-1 overflow-auto ${
+              isMobileLayout ? 'p-2.5 sm:p-3' : 'p-6 sm:p-8'
+            } flex justify-center items-start print-only-container`}
+          >
+            <SuratPreview
+              data={surat}
+              zoom={isMobileLayout ? 1 : zoom}
+              fitToContainer
+            />
           </div>
         </section>
+
+        {/* MOBILE BOTTOM STICKY BAR */}
+        {isMobileLayout && (
+          <nav
+            aria-label="Navigasi editor surat"
+            className="no-print sticky bottom-0 z-30 mt-auto st-surface border-t st-border px-2.5 py-1 grid grid-cols-2 gap-2 shadow-[0_-4px_12px_rgba(15,23,42,0.06)]"
+          >
+            <button
+              type="button"
+              onClick={() => setMobilePane('form')}
+              className={`min-h-[44px] inline-flex items-center justify-center gap-1.5 px-2 py-2 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap ${
+                mobilePane === 'form'
+                  ? 'bg-[#0B5D3B] text-white shadow-xs'
+                  : 'st-surface-muted st-text-secondary border'
+              }`}
+            >
+              <FilePenLine className="w-4 h-4 shrink-0" />
+              <span>1. Isi Data Surat</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobilePane('preview')}
+              className={`min-h-[44px] inline-flex items-center justify-center gap-1.5 px-2 py-2 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap ${
+                mobilePane === 'preview'
+                  ? 'bg-[#0B5D3B] text-white shadow-xs'
+                  : 'st-surface-muted st-text-secondary border'
+              }`}
+            >
+              <Eye className="w-4 h-4 shrink-0" />
+              <span>2. Pratinjau &amp; Unduh</span>
+            </button>
+          </nav>
+        )}
       </main>
 
       {/* DIRECTORY PICKER MODAL */}
@@ -2632,6 +2999,7 @@ export default function App() {
           setDocxConfirmError(null);
         }}
       />
+      </div>
     </div>
   );
 }

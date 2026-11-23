@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { FileSpreadsheet, FileText, FolderOpen, Search, Trash2 } from 'lucide-react';
+import { useViewport } from '../contexts/ViewportContext';
 import { ArsipSurat, KriteriaKeberangkatan } from '../types/surat';
 import { formatTanggalIndo } from '../utils/dateFormat';
 
@@ -24,6 +25,7 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
   onDeleteArsip,
   onGoToEditor,
 }) => {
+  const { isMobileLayout } = useViewport();
   const [query, setQuery] = useState('');
   const [filterKriteria, setFilterKriteria] = useState<'semua' | KriteriaKeberangkatan>('semua');
 
@@ -44,20 +46,24 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
   }, [arsipList, filterKriteria, query]);
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+    <div className={`max-w-6xl mx-auto ${isMobileLayout ? 'px-3 py-4' : 'px-4 sm:px-6 py-6 sm:py-8'}`}>
+      <div
+        className={`flex justify-between gap-3 mb-5 ${
+          isMobileLayout ? 'flex-col items-stretch' : 'flex-col sm:flex-row sm:items-center mb-6 gap-4'
+        }`}
+      >
         <div>
-          <h1 className="text-xl font-semibold st-text-primary">
+          <h1 className="text-lg sm:text-xl font-semibold st-text-primary">
             Daftar Draft Surat Tugas
           </h1>
-          <p className="text-sm st-text-secondary mt-1">
+          <p className="text-xs sm:text-sm st-text-secondary mt-1">
             Draft tersimpan di penyimpanan lokal peramban ini untuk dibuka kembali, dicatat ke Google Sheets, atau diunduh ke Word (.docx).
           </p>
         </div>
         <button
           type="button"
           onClick={onGoToEditor}
-          className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] transition-colors whitespace-nowrap shrink-0"
+          className="min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] transition-colors whitespace-nowrap shrink-0"
         >
           <FileText className="w-4 h-4" />
           Kembali ke Editor
@@ -65,15 +71,19 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
       </div>
 
       <div className="st-surface border rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b st-border st-surface-muted flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-          <div className="relative flex-1 max-w-md">
+        <div
+          className={`px-3.5 sm:px-4 py-3 border-b st-border st-surface-muted flex justify-between gap-3 ${
+            isMobileLayout ? 'flex-col items-stretch' : 'flex-col lg:flex-row lg:items-center'
+          }`}
+        >
+          <div className={`relative flex-1 ${isMobileLayout ? '' : 'max-w-md'}`}>
             <Search className="w-4 h-4 st-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Cari kegiatan, lokasi, dasar surat, atau nama pegawai..."
-              className="w-full pl-9 pr-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+              className="w-full min-h-[44px] pl-9 pr-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
             />
           </div>
 
@@ -90,7 +100,7 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
                 key={key}
                 type="button"
                 onClick={() => setFilterKriteria(key)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                className={`min-h-[38px] px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
                   filterKriteria === key
                     ? 'st-surface st-text-primary shadow-xs'
                     : 'st-text-secondary hover:opacity-80'
@@ -131,7 +141,9 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
               return (
                 <div
                   key={item.id}
-                  className="px-5 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-50/70 night:hover:bg-[#f5ecd5] dark:hover:bg-slate-800/60 transition-colors"
+                  className={`px-4 sm:px-5 py-4 flex justify-between gap-3 hover:bg-slate-50/70 night:hover:bg-[#f5ecd5] dark:hover:bg-slate-800/60 transition-colors ${
+                    isMobileLayout ? 'flex-col' : 'flex-col md:flex-row md:items-center gap-4'
+                  }`}
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -144,7 +156,7 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
                       >
                         {isTercatat ? 'Tercatat' : 'Draft'}
                       </span>
-                      <div className="text-sm font-semibold st-text-primary line-clamp-1">
+                      <div className="text-sm font-semibold st-text-primary line-clamp-2 sm:line-clamp-1">
                         {item.data.namaKegiatan || 'Kegiatan belum diisi'}
                       </div>
                     </div>
@@ -162,23 +174,23 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
                         {formatTanggalIndo(item.data.tanggalMulai)}
                       </span>
                     </div>
-                    <div className="text-xs st-text-muted mt-1">
+                    <div className="text-xs st-text-muted mt-1 break-words">
                       Dasar: {item.data.dasarAsal} ({item.data.dasarNomor})
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
                     <button
                       type="button"
                       onClick={() => onSyncArsipToSheets(item)}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-lg transition-colors whitespace-nowrap shrink-0"
+                      className="min-h-[44px] flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-lg transition-colors whitespace-nowrap shrink-0"
                     >
                       <FileSpreadsheet className="w-3.5 h-3.5" />
-                      {isTercatat ? 'Perbarui di Sheets' : 'Kirim ke Sheets'}
+                      {isTercatat ? 'Perbarui Sheets' : 'Kirim ke Sheets'}
                     </button>
                     <button
                       type="button"
                       onClick={() => onLoadArsip(item)}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] transition-colors whitespace-nowrap shrink-0"
+                      className="min-h-[44px] flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] transition-colors whitespace-nowrap shrink-0"
                     >
                       <FolderOpen className="w-3.5 h-3.5" />
                       Buka di Editor
@@ -186,7 +198,7 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
                     <button
                       type="button"
                       onClick={() => onDeleteArsip(item.id)}
-                      className="p-2 st-text-muted hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors"
+                      className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center p-2 st-text-muted hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors"
                       aria-label="Hapus draft"
                     >
                       <Trash2 className="w-4 h-4" />

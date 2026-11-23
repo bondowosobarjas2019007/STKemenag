@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   KOP_VARIAN_OPTIONS,
   Pegawai,
@@ -11,9 +11,12 @@ import {
   splitPangkatGolongan,
 } from '../utils/dateFormat';
 
+const A4_WIDTH_PX = (210 / 25.4) * 96; // ~793.7px at 96dpi
+
 interface SuratPreviewProps {
   data: SuratTugasData;
   zoom?: number;
+  fitToContainer?: boolean;
 }
 
 function buildKegiatanPhrase(namaKegiatan: string): string {
@@ -99,7 +102,43 @@ function PegawaiDetailRows({
   );
 }
 
-export const SuratPreview: React.FC<SuratPreviewProps> = ({ data, zoom = 1 }) => {
+export const SuratPreview: React.FC<SuratPreviewProps> = ({
+  data,
+  zoom = 1,
+  fitToContainer = true,
+}) => {
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const paperStackRef = useRef<HTMLDivElement | null>(null);
+  const [stageWidth, setStageWidth] = useState<number>(0);
+  const [paperHeight, setPaperHeight] = useState<number>(0);
+
+  useEffect(() => {
+    const stageEl = stageRef.current;
+    const paperEl = paperStackRef.current;
+    if (!stageEl && !paperEl) return;
+
+    const updateSizes = () => {
+      if (stageEl) {
+        setStageWidth(stageEl.clientWidth);
+      }
+      if (paperEl) {
+        setPaperHeight(paperEl.scrollHeight);
+      }
+    };
+
+    updateSizes();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateSizes);
+      return () => window.removeEventListener('resize', updateSizes);
+    }
+
+    const observer = new ResizeObserver(updateSizes);
+    if (stageEl) observer.observe(stageEl);
+    if (paperEl) observer.observe(paperEl);
+    return () => observer.disconnect();
+  }, [data.kriteria, data.pegawaiList.length]);
+
   const kop = KOP_VARIAN_OPTIONS[data.kopVarian] ?? KOP_VARIAN_OPTIONS.telepon;
   const nomorDisplay = data.modeSrikandi
     ? '${nomor_naskah}'
@@ -131,20 +170,42 @@ export const SuratPreview: React.FC<SuratPreviewProps> = ({ data, zoom = 1 }) =>
       ? data.pegawaiList.slice(0, 3)
       : data.pegawaiList;
 
-  const scaleWrapperStyle: React.CSSProperties =
-    zoom !== 1
-      ? {
-          transform: `scale(${zoom})`,
-          transformOrigin: 'top center',
-          width: '210mm',
-          marginBottom: `calc((${zoom} - 1) * ${isTerlampir ? '594mm' : '297mm'})`,
-        }
-      : { width: '210mm' };
+  const maxFitScale =
+    fitToContainer && stageWidth > 0
+      ? Math.max(0.28, stageWidth / A4_WIDTH_PX)
+      : zoom;
+  const effectiveScale = fitToContainer ? Math.min(zoom, maxFitScale) : zoom;
+  const isAutoScaled = effectiveScale < zoom - 0.01;
+
+  const outerBoxStyle: React.CSSProperties = {
+    width: `${Math.round(A4_WIDTH_PX * effectiveScale)}px`,
+    height: paperHeight > 0 ? `${Math.round(paperHeight * effectiveScale)}px` : undefined,
+  };
+
+  const scaleWrapperStyle: React.CSSProperties = {
+    width: '210mm',
+    transform: effectiveScale !== 1 ? `scale(${effectiveScale})` : undefined,
+    transformOrigin: 'top left',
+  };
 
   return (
-    <div className="flex flex-col items-center print-scale-reset" style={scaleWrapperStyle}>
-      {/* HALAMAN 1: SURAT TUGAS UTAMA */}
-      <div className="surat-a4 shadow-[0_6px_28px_rgba(15,23,42,0.12)] border border-slate-300/80 mb-6 print:mb-0">
+    <div
+      ref={stageRef}
+      className="w-full flex flex-col items-center print-only-container"
+    >
+      {isAutoScaled && (
+        <div className="no-print mb-2 text-[11px] font-mono-tabular st-text-muted text-center">
+          Pratinjau A4 otomatis diskalakan {Math.round(effectiveScale * 100)}% agar muat layar
+        </div>
+      )}
+      <div className="print-scale-reset-box relative" style={outerBoxStyle}>
+        <div
+          ref={paperStackRef}
+          className="flex flex-col items-center print-scale-reset"
+          style={scaleWrapperStyle}
+        >
+          {/* HALAMAN 1: SURAT TUGAS UTAMA */}
+          <div className="surat-a4 shadow-[0_6px_28px_rgba(15,23,42,0.12)] border border-slate-300/80 mb-6 print:mb-0">
         <div>
           {/* KOP SURAT RESMI KEMENAG JEMBER */}
           <div className="flex items-center gap-3 pb-2 border-b-[1.5px] border-black">
@@ -416,6 +477,8 @@ export const SuratPreview: React.FC<SuratPreviewProps> = ({ data, zoom = 1 }) =>
           <AntiGratifikasiFooter />
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 };

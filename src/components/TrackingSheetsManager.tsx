@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   Wrench,
 } from 'lucide-react';
+import { useViewport } from '../contexts/ViewportContext';
 import {
   OWNER_GOOGLE_EMAIL,
   SpreadsheetSummary,
@@ -80,6 +81,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
   onRefreshRows,
   onLoadTrackedDraft,
 }) => {
+  const { isMobileLayout } = useViewport();
   const [query, setQuery] = useState('');
   const [customUrlInput, setCustomUrlInput] = useState('');
   const [showLinkInput, setShowLinkInput] = useState(false);
@@ -127,16 +129,20 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8 space-y-6">
+    <div className={`max-w-6xl mx-auto space-y-5 sm:space-y-6 ${isMobileLayout ? 'px-3 py-4' : 'px-4 sm:px-6 py-6 sm:py-8'}`}>
       {/* HEADER */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div
+        className={`flex justify-between gap-4 ${
+          isMobileLayout ? 'flex-col items-stretch' : 'flex-col md:flex-row md:items-center'
+        }`}
+      >
         <div>
-          <h1 className="text-xl font-semibold st-text-primary">
+          <h1 className="text-lg sm:text-xl font-semibold st-text-primary">
             Tracking Database Google Sheets
           </h1>
-          <p className="text-sm st-text-secondary mt-1">
+          <p className="text-xs sm:text-sm st-text-secondary mt-1">
             Database terpusat akun pemilik (
-            <span className="font-mono-tabular font-medium st-text-primary">
+            <span className="font-mono-tabular font-medium st-text-primary break-all">
               {OWNER_GOOGLE_EMAIL}
             </span>
             ). Seluruh Surat Tugas wajib tercatat dan otomatis dikelompokkan per sheet tahun (
@@ -153,23 +159,23 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
               label={isConnecting ? 'Menghubungkan...' : 'Masuk Admin (Google)'}
             />
           ) : (
-            <div className="flex items-center gap-3 st-surface border rounded-lg px-3.5 py-2">
-              <div className="text-xs">
-                <div className="flex items-center gap-1.5 font-semibold st-text-primary">
-                  <span>{googleUser.displayName || 'Akun Google'}</span>
+            <div className="flex items-center justify-between gap-3 w-full sm:w-auto st-surface border rounded-lg px-3.5 py-2">
+              <div className="text-xs min-w-0">
+                <div className="flex items-center gap-1.5 font-semibold st-text-primary flex-wrap">
+                  <span className="truncate">{googleUser.displayName || 'Akun Google'}</span>
                   {isOwner && (
                     <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-amber-100 night:bg-amber-200/70 dark:bg-amber-900/50 text-amber-900 dark:text-amber-200 rounded">
                       Admin / Pemilik
                     </span>
                   )}
                 </div>
-                <div className="st-text-muted">{googleUser.email}</div>
+                <div className="st-text-muted truncate">{googleUser.email}</div>
               </div>
               <button
                 type="button"
                 onClick={onGoogleLogout}
                 title="Keluar dari akun Google"
-                className="p-1.5 st-text-muted hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-md transition-colors"
+                className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center st-text-muted hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-md transition-colors shrink-0"
                 aria-label="Keluar akun Google"
               >
                 <LogOut className="w-4 h-4" />
@@ -180,7 +186,11 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
       </div>
 
       {/* CENTRALIZED SECURITY STATUS BANNER */}
-      <div className="st-surface border rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div
+        className={`st-surface border rounded-xl p-4 flex justify-between gap-3 ${
+          isMobileLayout ? 'flex-col items-stretch' : 'flex-col sm:flex-row sm:items-center'
+        }`}
+      >
         <div className="flex items-start gap-3">
           <div
             className={`p-2 rounded-lg shrink-0 ${
@@ -214,7 +224,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
           <button
             type="button"
             onClick={() => setShowOwnerSetup((v) => !v)}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/50 whitespace-nowrap shrink-0"
+            className="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/50 whitespace-nowrap shrink-0"
           >
             <Wrench className="w-3.5 h-3.5" />
             Proteksi &amp; Jembatan Pemilik
@@ -235,7 +245,11 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
 
       {/* OWNER PROTECTION & APPS SCRIPT BRIDGE PANEL (ADMIN ONLY) */}
       {isAdminMode && showOwnerSetup && (
-        <div className="st-surface border-2 border-[#0B5D3B]/35 dark:border-emerald-700/60 rounded-xl p-5 space-y-5">
+        <div
+          className={`st-surface border-2 border-[#0B5D3B]/35 dark:border-emerald-700/60 rounded-xl space-y-5 ${
+            isMobileLayout ? 'p-4' : 'p-5'
+          }`}
+        >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b st-border">
             <div>
               <h2 className="text-sm font-semibold st-text-primary">
@@ -249,7 +263,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
               type="button"
               disabled={!spreadsheet || isProtecting}
               onClick={onProtectSpreadsheet}
-              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-50 whitespace-nowrap shrink-0"
+              className="min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-50 whitespace-nowrap shrink-0"
             >
               <Lock className="w-3.5 h-3.5" />
               {isProtecting
@@ -271,7 +285,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
               <button
                 type="button"
                 onClick={() => void handleCopyAppsScript()}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold st-text-primary st-surface-muted border rounded-lg hover:opacity-90 whitespace-nowrap shrink-0"
+                className="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold st-text-primary st-surface-muted border rounded-lg hover:opacity-90 whitespace-nowrap shrink-0"
               >
                 {copiedScript ? (
                   <>
@@ -306,12 +320,12 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                 value={bridgeUrlInput}
                 onChange={(e) => setBridgeUrlInput(e.target.value)}
                 placeholder="https://script.google.com/macros/s/.../exec"
-                className="flex-1 px-3 py-2 text-xs font-mono-tabular st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                className="flex-1 min-h-[44px] px-3 py-2 text-sm font-mono-tabular st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
               />
               <button
                 type="submit"
                 disabled={isSyncing || !bridgeUrlInput.trim()}
-                className="px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-50 whitespace-nowrap shrink-0"
+                className="min-h-[44px] px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-50 whitespace-nowrap shrink-0"
               >
                 Simpan &amp; Uji Bridge
               </button>
@@ -322,7 +336,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                     setBridgeUrlInput('');
                     onClearLocalBridgeUrl();
                   }}
-                  className="px-3 py-2 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90 whitespace-nowrap shrink-0"
+                  className="min-h-[44px] px-3 py-2 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90 whitespace-nowrap shrink-0"
                 >
                   Hapus URL Lokal
                 </button>
@@ -334,7 +348,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
 
       {/* CONNECTION GATE */}
       {!canViewTrackingData ? (
-        <div className="st-surface border rounded-xl p-8 text-center">
+        <div className={`st-surface border rounded-xl text-center ${isMobileLayout ? 'p-5' : 'p-8'}`}>
           <FileSpreadsheet className="w-10 h-10 text-[#0B5D3B] dark:text-emerald-400 mx-auto mb-3" />
           <h2 className="text-base font-semibold st-text-primary">
             Database Tracking Terpusat ke Akun Pemilik
@@ -355,7 +369,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
           </div>
         </div>
       ) : !spreadsheet ? (
-        <div className="st-surface border rounded-xl p-8">
+        <div className={`st-surface border rounded-xl ${isMobileLayout ? 'p-5' : 'p-8'}`}>
           <div className="max-w-xl mx-auto text-center space-y-4">
             <FileSpreadsheet className="w-10 h-10 text-[#0B5D3B] dark:text-emerald-400 mx-auto" />
             <div>
@@ -385,7 +399,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                   type="button"
                   disabled={isSyncing}
                   onClick={onAutoSetupSpreadsheet}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
+                  className="min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
                 >
                   <FileSpreadsheet className="w-4 h-4" />
                   {isSyncing
@@ -395,7 +409,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowLinkInput((v) => !v)}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90 transition-colors whitespace-nowrap shrink-0"
+                  className="min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90 transition-colors whitespace-nowrap shrink-0"
                 >
                   <Link2 className="w-4 h-4" />
                   Tautkan URL / ID Spreadsheet
@@ -419,11 +433,11 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                   value={customUrlInput}
                   onChange={(e) => setCustomUrlInput(e.target.value)}
                   placeholder="Tempel URL atau ID Google Spreadsheet..."
-                  className="flex-1 px-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                  className="flex-1 min-h-[44px] px-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                 />
                 <button
                   type="submit"
-                  className="px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] whitespace-nowrap shrink-0"
+                  className="min-h-[44px] px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] whitespace-nowrap shrink-0"
                 >
                   Hubungkan
                 </button>
@@ -435,7 +449,11 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
         <>
           {/* SPREADSHEET SUMMARY BAR */}
           <div className="st-surface border rounded-xl p-4 space-y-3">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div
+              className={`flex justify-between gap-3 ${
+                isMobileLayout ? 'flex-col items-stretch' : 'flex-col lg:flex-row lg:items-center'
+              }`}
+            >
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <FileSpreadsheet className="w-4 h-4 text-[#0B5D3B] dark:text-emerald-400 shrink-0" />
@@ -454,7 +472,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                     href={spreadsheet.spreadsheetUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-lg transition-colors whitespace-nowrap shrink-0"
+                    className="min-h-[44px] inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-lg transition-colors whitespace-nowrap shrink-0"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
                     Buka Google Sheets
@@ -464,7 +482,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                   <button
                     type="button"
                     onClick={() => setShowLinkInput((v) => !v)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90 transition-colors whitespace-nowrap shrink-0"
+                    className="min-h-[44px] inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90 transition-colors whitespace-nowrap shrink-0"
                   >
                     <Link2 className="w-3.5 h-3.5" />
                     Ganti Spreadsheet
@@ -474,7 +492,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                   type="button"
                   disabled={isSyncing}
                   onClick={onRefreshRows}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90 disabled:opacity-50 transition-colors whitespace-nowrap shrink-0"
+                  className="min-h-[44px] inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90 disabled:opacity-50 transition-colors whitespace-nowrap shrink-0"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
                   Muat Ulang
@@ -498,11 +516,11 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                   value={customUrlInput}
                   onChange={(e) => setCustomUrlInput(e.target.value)}
                   placeholder="Tempel URL atau ID Google Spreadsheet tujuan milik pemilik..."
-                  className="flex-1 px-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                  className="flex-1 min-h-[44px] px-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                 />
                 <button
                   type="submit"
-                  className="px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] whitespace-nowrap shrink-0"
+                  className="min-h-[44px] px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] whitespace-nowrap shrink-0"
                 >
                   Terapkan Spreadsheet
                 </button>
@@ -520,7 +538,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                     key={tab.sheetId}
                     type="button"
                     onClick={() => onSelectYear(tab.title)}
-                    className={`px-3 py-1.5 text-xs font-mono-tabular font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                    className={`min-h-[40px] px-3 py-1.5 text-xs font-mono-tabular font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
                       selectedYear === tab.title
                         ? 'bg-[#0B5D3B] text-white'
                         : 'st-surface-muted st-text-secondary hover:opacity-90'
@@ -533,7 +551,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                   <button
                     type="button"
                     onClick={() => setShowNewYearForm((v) => !v)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-md transition-colors whitespace-nowrap shrink-0"
+                    className="min-h-[40px] inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-md transition-colors whitespace-nowrap shrink-0"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     Buat Sheet Tahun Baru
@@ -554,7 +572,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                   onCreateYearSheet(cleanYear);
                   setShowNewYearForm(false);
                 }}
-                className="flex items-center gap-2 pt-2 border-t st-border"
+                className="flex flex-wrap items-center gap-2 pt-2 border-t st-border"
               >
                 <label className="text-xs font-medium st-text-secondary">
                   Tahun Sheet:
@@ -566,12 +584,12 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                   value={newYearInput}
                   onChange={(e) => setNewYearInput(e.target.value)}
                   placeholder="2027"
-                  className="w-24 px-2.5 py-1.5 text-sm font-mono-tabular st-input border rounded-md focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                  className="w-24 min-h-[44px] px-2.5 py-1.5 text-sm font-mono-tabular st-input border rounded-md focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                 />
                 <button
                   type="submit"
                   disabled={isSyncing}
-                  className="px-3 py-1.5 text-xs font-semibold text-white bg-[#0B5D3B] rounded-md hover:bg-[#09492E] disabled:opacity-50"
+                  className="min-h-[44px] px-3 py-1.5 text-xs font-semibold text-white bg-[#0B5D3B] rounded-md hover:bg-[#09492E] disabled:opacity-50"
                 >
                   Buat Sheet {newYearInput}
                 </button>
@@ -581,15 +599,19 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
 
           {/* DATA TABLE */}
           <div className="st-surface border rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b st-border st-surface-muted flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="relative flex-1 max-w-md">
+            <div
+              className={`px-3.5 sm:px-4 py-3 border-b st-border st-surface-muted flex justify-between gap-3 ${
+                isMobileLayout ? 'flex-col items-stretch' : 'flex-col sm:flex-row sm:items-center'
+              }`}
+            >
+              <div className={`relative flex-1 ${isMobileLayout ? '' : 'max-w-md'}`}>
                 <Search className="w-4 h-4 st-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Cari kegiatan, nama pegawai, lokasi, atau nomor dasar..."
-                  className="w-full pl-9 pr-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                  className="w-full min-h-[44px] pl-9 pr-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                 />
               </div>
               <div className="text-xs st-text-muted font-mono-tabular">
@@ -612,7 +634,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
+                <table className="w-full min-w-[680px] text-left border-collapse">
                   <thead>
                     <tr className="border-b st-border text-xs font-semibold st-text-secondary st-surface-muted">
                       <th className="py-2.5 px-4 w-12 text-center">No</th>
@@ -662,7 +684,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                               onClick={() =>
                                 onLoadTrackedDraft(row.rawDraft!, !isAdminMode)
                               }
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-md transition-colors whitespace-nowrap shrink-0"
+                              className="min-h-[40px] inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-md transition-colors whitespace-nowrap shrink-0"
                             >
                               <FolderOpen className="w-3.5 h-3.5" />
                               {isAdminMode ? 'Buka di Editor' : 'Salin ke Editor'}

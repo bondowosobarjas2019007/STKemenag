@@ -1,5 +1,6 @@
 import React from 'react';
 import { AlertTriangle, Download, FileSpreadsheet, Loader2, X } from 'lucide-react';
+import { useViewport } from '../contexts/ViewportContext';
 import { GoogleSignInButton } from './GoogleSignInButton';
 
 interface ConfirmSheetsOverwriteModalProps {
@@ -23,17 +24,26 @@ export const ConfirmSheetsOverwriteModal: React.FC<
   onConfirm,
   onCancel,
 }) => {
+  const { isMobileLayout, isForcedMobile } = useViewport();
   if (!isOpen) return null;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 no-print"
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 no-print ${
+        isMobileLayout ? 'p-0' : 'p-4'
+      } ${isForcedMobile ? 'max-w-[430px] mx-auto' : ''}`}
       role="dialog"
       aria-modal="true"
       aria-label="Konfirmasi pembaruan data Google Sheets"
     >
-      <div className="w-full max-w-md st-surface border rounded-xl shadow-xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b st-border">
+      <div
+        className={`w-full st-surface overflow-hidden flex flex-col ${
+          isMobileLayout
+            ? 'h-full rounded-none border-0'
+            : 'max-w-md border rounded-xl shadow-xl'
+        }`}
+      >
+        <div className="flex items-center justify-between px-4 sm:px-5 py-3.5 border-b st-border shrink-0">
           <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
             <AlertTriangle className="w-4 h-4 shrink-0" />
             <h2 className="text-sm font-semibold st-text-primary">
@@ -43,14 +53,14 @@ export const ConfirmSheetsOverwriteModal: React.FC<
           <button
             type="button"
             onClick={onCancel}
-            className="p-1.5 st-text-muted hover:text-slate-700 dark:hover:text-slate-200 rounded-md"
+            className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center st-text-muted hover:text-slate-700 dark:hover:text-slate-200 rounded-lg"
             aria-label="Tutup konfirmasi"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="px-5 py-4 text-xs st-text-secondary space-y-2 leading-relaxed">
+        <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 text-xs st-text-secondary space-y-2.5 leading-relaxed">
           <p>
             Surat Tugas ini sudah tercatat sebelumnya pada{' '}
             <span className="font-semibold st-text-primary">
@@ -58,7 +68,7 @@ export const ConfirmSheetsOverwriteModal: React.FC<
             </span>
             .
           </p>
-          <div className="p-2.5 st-surface-muted border rounded-lg st-text-primary font-medium line-clamp-2">
+          <div className="p-3 st-surface-muted border rounded-lg st-text-primary font-medium line-clamp-2">
             {namaKegiatan || 'Kegiatan Surat Tugas'}
           </div>
           <p>
@@ -66,12 +76,16 @@ export const ConfirmSheetsOverwriteModal: React.FC<
           </p>
         </div>
 
-        <div className="px-5 py-3.5 st-surface-muted border-t st-border flex items-center justify-end gap-2">
+        <div
+          className={`px-4 sm:px-5 py-3.5 st-surface-muted border-t st-border flex gap-2 shrink-0 ${
+            isMobileLayout ? 'flex-col-reverse' : 'items-center justify-end'
+          }`}
+        >
           <button
             type="button"
             disabled={isBusy}
             onClick={onCancel}
-            className="px-4 py-2 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90 transition-colors"
+            className="min-h-[44px] px-4 py-2 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90 transition-colors"
           >
             Batal
           </button>
@@ -79,7 +93,7 @@ export const ConfirmSheetsOverwriteModal: React.FC<
             type="button"
             disabled={isBusy}
             onClick={onConfirm}
-            className="px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60 transition-colors"
+            className="min-h-[44px] px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60 transition-colors"
           >
             {isBusy ? 'Menyimpan...' : 'Ya, Perbarui Baris'}
           </button>
@@ -110,17 +124,26 @@ export const ConfirmDocxExportModal: React.FC<ConfirmDocxExportModalProps> = ({
   onForceDownloadOnly,
   onCancel,
 }) => {
+  const { isMobileLayout, isForcedMobile } = useViewport();
   if (!isOpen) return null;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 no-print"
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 no-print ${
+        isMobileLayout ? 'p-0' : 'p-4'
+      } ${isForcedMobile ? 'max-w-[430px] mx-auto' : ''}`}
       role="dialog"
       aria-modal="true"
       aria-label="Konfirmasi Unduh dan Pencatatan Surat"
     >
-      <div className="w-full max-w-md st-surface border rounded-xl shadow-xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b st-border bg-emerald-50/50 night:bg-[#f5ecd5] dark:bg-emerald-950/35">
+      <div
+        className={`w-full st-surface overflow-hidden flex flex-col ${
+          isMobileLayout
+            ? 'h-full rounded-none border-0'
+            : 'max-w-md border rounded-xl shadow-xl'
+        }`}
+      >
+        <div className="flex items-center justify-between px-4 sm:px-5 py-3.5 border-b st-border bg-emerald-50/50 night:bg-[#f5ecd5] dark:bg-emerald-950/35 shrink-0">
           <div className="flex items-center gap-2">
             <FileSpreadsheet className="w-4 h-4 text-[#0B5D3B] dark:text-emerald-400 shrink-0" />
             <h2 className="text-sm font-semibold st-text-primary">
@@ -131,19 +154,19 @@ export const ConfirmDocxExportModal: React.FC<ConfirmDocxExportModalProps> = ({
             type="button"
             disabled={isBusy}
             onClick={onCancel}
-            className="p-1.5 st-text-muted hover:text-slate-700 dark:hover:text-slate-200 rounded-md disabled:opacity-40"
+            className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center st-text-muted hover:text-slate-700 dark:hover:text-slate-200 rounded-lg disabled:opacity-40"
             aria-label="Tutup konfirmasi unduh"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="px-5 py-4 text-xs st-text-secondary space-y-3 leading-relaxed">
+        <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 text-xs st-text-secondary space-y-3 leading-relaxed">
           <p className="st-text-primary text-[13px] leading-relaxed">
             Apakah Anda akan mengunduh file .docx ini? Bila Ya, surat akan dicatat di Worksheet (Google Sheets) otomatis.
           </p>
 
-          <div className="p-2.5 st-surface-muted border rounded-lg space-y-1">
+          <div className="p-3 st-surface-muted border rounded-lg space-y-1">
             <div className="text-[11px] font-medium st-text-muted">
               Tab Tahun {targetYear} · Status: Tercatat / Final
             </div>
@@ -168,12 +191,16 @@ export const ConfirmDocxExportModal: React.FC<ConfirmDocxExportModalProps> = ({
           )}
         </div>
 
-        <div className="px-5 py-3.5 st-surface-muted border-t st-border flex flex-wrap items-center justify-end gap-2">
+        <div
+          className={`px-4 sm:px-5 py-3.5 st-surface-muted border-t st-border flex gap-2 shrink-0 ${
+            isMobileLayout ? 'flex-col-reverse' : 'flex-wrap items-center justify-end'
+          }`}
+        >
           <button
             type="button"
             disabled={isBusy}
             onClick={onCancel}
-            className="px-3.5 py-2 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90 disabled:opacity-50 transition-colors"
+            className="min-h-[44px] px-3.5 py-2 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90 disabled:opacity-50 transition-colors"
           >
             Batal
           </button>
@@ -183,9 +210,9 @@ export const ConfirmDocxExportModal: React.FC<ConfirmDocxExportModalProps> = ({
               type="button"
               disabled={isBusy}
               onClick={onForceDownloadOnly}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-amber-900 dark:text-amber-200 bg-amber-100 dark:bg-amber-900/50 border border-amber-300 dark:border-amber-700 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/70 disabled:opacity-50 transition-colors"
+              className="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-amber-900 dark:text-amber-200 bg-amber-100 dark:bg-amber-900/50 border border-amber-300 dark:border-amber-700 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/70 disabled:opacity-50 transition-colors"
             >
-              <Download className="w-3.5 h-3.5" />
+              <Download className="w-4 h-4" />
               Tetap Unduh .docx Saja
             </button>
           )}
@@ -194,16 +221,16 @@ export const ConfirmDocxExportModal: React.FC<ConfirmDocxExportModalProps> = ({
             type="button"
             disabled={isBusy}
             onClick={onConfirmRecordAndDownload}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60 transition-colors"
+            className="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60 transition-colors"
           >
             {isBusy ? (
               <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <Loader2 className="w-4 h-4 animate-spin" />
                 Menyimpan ke Worksheet...
               </>
             ) : (
               <>
-                <Download className="w-3.5 h-3.5" />
+                <Download className="w-4 h-4" />
                 Ya, Catat &amp; Unduh
               </>
             )}
@@ -233,20 +260,29 @@ export const SheetsAuthPromptModal: React.FC<SheetsAuthPromptModalProps> = ({
   onOpenTrackingTab,
   onClose,
 }) => {
+  const { isMobileLayout, isForcedMobile } = useViewport();
   if (!isOpen) return null;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 no-print"
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 no-print ${
+        isMobileLayout ? 'p-0' : 'p-4'
+      } ${isForcedMobile ? 'max-w-[430px] mx-auto' : ''}`}
       role="dialog"
       aria-modal="true"
       aria-label="Wajib simpan ke Spreadsheet Pemilik"
     >
-      <div className="w-full max-w-md st-surface border rounded-xl shadow-xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b st-border bg-emerald-50/50 night:bg-[#f5ecd5] dark:bg-emerald-950/35">
-          <div className="flex items-center gap-2">
-            <FileSpreadsheet className="w-4 h-4 text-[#0B5D3B] dark:text-emerald-400" />
-            <h2 className="text-sm font-semibold st-text-primary">
+      <div
+        className={`w-full st-surface overflow-hidden flex flex-col ${
+          isMobileLayout
+            ? 'h-full rounded-none border-0'
+            : 'max-w-md border rounded-xl shadow-xl'
+        }`}
+      >
+        <div className="flex items-center justify-between px-4 sm:px-5 py-3.5 border-b st-border bg-emerald-50/50 night:bg-[#f5ecd5] dark:bg-emerald-950/35 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <FileSpreadsheet className="w-4 h-4 text-[#0B5D3B] dark:text-emerald-400 shrink-0" />
+            <h2 className="text-sm font-semibold st-text-primary truncate">
               {pendingActionLabel
                 ? `Wajib Simpan ke Sheets Sebelum ${pendingActionLabel}`
                 : 'Wajib Terhubung ke Spreadsheet Pemilik'}
@@ -255,14 +291,14 @@ export const SheetsAuthPromptModal: React.FC<SheetsAuthPromptModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 st-text-muted hover:text-slate-700 dark:hover:text-slate-200 rounded-md"
+            className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center st-text-muted hover:text-slate-700 dark:hover:text-slate-200 rounded-lg shrink-0"
             aria-label="Tutup dialog"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="px-5 py-4 text-xs st-text-secondary space-y-3 leading-relaxed">
+        <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 text-xs st-text-secondary space-y-3 leading-relaxed">
           <p>
             Setiap Surat Tugas wajib tercatat ke Google Spreadsheet akun pemilik (
             <span className="font-mono-tabular font-semibold st-text-primary">
@@ -290,7 +326,11 @@ export const SheetsAuthPromptModal: React.FC<SheetsAuthPromptModalProps> = ({
           </div>
         </div>
 
-        <div className="px-5 py-3 st-surface-muted border-t st-border flex flex-wrap items-center justify-between gap-2">
+        <div
+          className={`px-4 sm:px-5 py-3 st-surface-muted border-t st-border flex gap-2 shrink-0 ${
+            isMobileLayout ? 'flex-col' : 'flex-wrap items-center justify-between'
+          }`}
+        >
           {onOpenTrackingTab ? (
             <button
               type="button"
@@ -298,7 +338,7 @@ export const SheetsAuthPromptModal: React.FC<SheetsAuthPromptModalProps> = ({
                 onClose();
                 onOpenTrackingTab();
               }}
-              className="px-3 py-1.5 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-lg"
+              className="min-h-[44px] px-3 py-2 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-lg"
             >
               Pengaturan Tracking Sheets
             </button>
@@ -308,7 +348,7 @@ export const SheetsAuthPromptModal: React.FC<SheetsAuthPromptModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-1.5 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90"
+            className="min-h-[44px] px-4 py-2 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90"
           >
             Tutup
           </button>

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Eye, Moon, Sun } from 'lucide-react';
+import { useViewport } from '../contexts/ViewportContext';
 
 export type ThemeMode = 'normal' | 'night' | 'dark';
 
@@ -73,6 +74,8 @@ export const ThemeSwitcher: React.FC<ThemeSwitcherProps> = ({
   themeMode,
   onChange,
 }) => {
+  const { isMobileLayout } = useViewport();
+
   return (
     <div
       role="group"
@@ -86,9 +89,12 @@ export const ThemeSwitcher: React.FC<ThemeSwitcherProps> = ({
             key={id}
             type="button"
             title={title}
+            aria-label={title}
             aria-pressed={active}
             onClick={() => onChange(id)}
-            className={`inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+            className={`inline-flex items-center justify-center gap-1 ${
+              isMobileLayout ? 'min-w-[32px] min-h-[36px] px-1.5 py-1.5' : 'px-2 py-1'
+            } text-[11px] font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
               active
                 ? id === 'night'
                   ? 'bg-[#fdf6e3] text-[#3b3228] shadow-xs border border-[#d3c096]'
@@ -99,8 +105,12 @@ export const ThemeSwitcher: React.FC<ThemeSwitcherProps> = ({
             }`}
           >
             <Icon className="w-3.5 h-3.5 shrink-0" />
-            <span className="hidden xl:inline">{label}</span>
-            <span className="hidden sm:inline xl:hidden">{shortLabel}</span>
+            {!isMobileLayout && (
+              <>
+                <span className="hidden xl:inline">{label}</span>
+                <span className="hidden sm:inline xl:hidden">{shortLabel}</span>
+              </>
+            )}
           </button>
         );
       })}

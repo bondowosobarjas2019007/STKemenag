@@ -18,6 +18,7 @@ import {
   UserPlus,
   X,
 } from 'lucide-react';
+import { useViewport } from '../contexts/ViewportContext';
 import { PANGKAT_GOLONGAN_PRESETS, Pegawai } from '../types/surat';
 import { parseDukPdfBuffer, ParseDukPdfResult } from '../utils/parseDukPdf';
 
@@ -58,6 +59,7 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
   onBulkUpdateDirectory,
   onUsePegawaiInSurat,
 }) => {
+  const { isMobileLayout, isForcedMobile } = useViewport();
   const [query, setQuery] = useState('');
   const [unitFilter, setUnitFilter] = useState<UnitFilter>('semua');
   const [page, setPage] = useState(1);
@@ -274,7 +276,7 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8">
+    <div className={`max-w-6xl mx-auto ${isMobileLayout ? 'px-3 py-4' : 'px-4 sm:px-6 py-6 sm:py-8'}`}>
       <input
         ref={fileInputRef}
         type="file"
@@ -283,12 +285,16 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
         className="hidden"
       />
 
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <div
+        className={`flex justify-between gap-4 mb-5 ${
+          isMobileLayout ? 'flex-col items-stretch' : 'flex-col sm:flex-row sm:items-center mb-6'
+        }`}
+      >
         <div>
-          <h1 className="text-xl font-semibold st-text-primary">
+          <h1 className="text-lg sm:text-xl font-semibold st-text-primary">
             Direktori Pegawai Kemenag Jember
           </h1>
-          <p className="text-sm st-text-secondary mt-1">
+          <p className="text-xs sm:text-sm st-text-secondary mt-1">
             Database DUK ASN Kantor Kementerian Agama Kabupaten Jember ({directory.length.toLocaleString('id-ID')} pegawai). Unggah file PDF DUK terbaru kapan saja untuk memperbarui data seluruh pegawai secara otomatis.
           </p>
         </div>
@@ -296,7 +302,7 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
           <a
             href="/assets/aistudio/DUK_KEMENAG_JEMBER_NOVEMBER_2026_f5e6da92.pdf"
             download="DUK_KEMENAG_JEMBER_NOVEMBER_2026.pdf"
-            className="inline-flex items-center gap-2 px-3.5 py-2.5 text-xs font-semibold st-text-secondary st-surface border rounded-lg hover:opacity-90 transition-colors whitespace-nowrap shrink-0"
+            className="min-h-[44px] inline-flex items-center justify-center gap-2 px-3.5 py-2 text-xs font-semibold st-text-secondary st-surface border rounded-lg hover:opacity-90 transition-colors whitespace-nowrap shrink-0"
           >
             <Download className="w-4 h-4" />
             Unduh PDF DUK
@@ -305,7 +311,7 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
             type="button"
             disabled={isParsingPdf}
             onClick={handleTriggerUpload}
-            className="inline-flex items-center gap-2 px-3.5 py-2.5 text-xs font-semibold text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-800 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/50 disabled:opacity-60 disabled:cursor-wait transition-colors whitespace-nowrap shrink-0"
+            className="min-h-[44px] inline-flex items-center justify-center gap-2 px-3.5 py-2 text-xs font-semibold text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-800 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/50 disabled:opacity-60 disabled:cursor-wait transition-colors whitespace-nowrap shrink-0"
           >
             {isParsingPdf ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -317,7 +323,7 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
           <button
             type="button"
             onClick={openCreate}
-            className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] transition-colors whitespace-nowrap shrink-0"
+            className="min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] transition-colors whitespace-nowrap shrink-0"
           >
             <Plus className="w-4 h-4" />
             Tambah Pegawai
@@ -416,7 +422,7 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
           </div>
 
           <div className="mt-4 overflow-x-auto border st-border rounded-lg">
-            <table className="w-full text-left border-collapse text-xs">
+            <table className="w-full min-w-[540px] text-left border-collapse text-xs">
               <thead>
                 <tr className="st-surface-muted border-b st-border st-text-secondary font-semibold">
                   <th className="py-2 px-3 w-12 text-center">No</th>
@@ -514,7 +520,11 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
               </span>
             </div>
           )}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div
+            className={`grid gap-4 ${
+              isMobileLayout ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'
+            }`}
+          >
             <div>
               <label className="block text-xs font-medium st-text-secondary mb-1">
                 Nama Lengkap & Gelar
@@ -525,7 +535,7 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
                 value={form.nama}
                 onChange={(e) => setForm({ ...form, nama: e.target.value })}
                 placeholder="Contoh: Dr. Ahmad Tholabi, M.HI"
-                className="w-full px-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                className="w-full min-h-[44px] px-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
               />
             </div>
             <div>
@@ -538,7 +548,7 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
                 value={form.nip}
                 onChange={(e) => setForm({ ...form, nip: e.target.value })}
                 placeholder="18 digit NIP tanpa spasi"
-                className="w-full px-3 py-2 text-sm font-mono-tabular st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                className="w-full min-h-[44px] px-3 py-2 text-sm font-mono-tabular st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
               />
             </div>
             <div>
@@ -551,7 +561,7 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
                 value={form.pangkatGolongan}
                 onChange={(e) => setForm({ ...form, pangkatGolongan: e.target.value })}
                 placeholder="Contoh: Pembina Tk.I (IV/b)"
-                className="w-full px-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                className="w-full min-h-[44px] px-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
               />
               <datalist id="pangkat-golongan-list">
                 {PANGKAT_GOLONGAN_PRESETS.map((item) => (
@@ -569,7 +579,7 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
                 value={form.jabatan}
                 onChange={(e) => setForm({ ...form, jabatan: e.target.value })}
                 placeholder="Contoh: Kepala Seksi Bimas Islam Kantor Kemenag Kab. Jember"
-                className="w-full px-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                className="w-full min-h-[44px] px-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
               />
             </div>
           </div>
@@ -577,13 +587,13 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
             <button
               type="button"
               onClick={() => setIsFormOpen(false)}
-              className="px-4 py-2 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90"
+              className="min-h-[44px] px-4 py-2 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90"
             >
               Batal
             </button>
             <button
               type="submit"
-              className="px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E]"
+              className="min-h-[44px] px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E]"
             >
               {editingId ? 'Simpan Perubahan' : 'Simpan Pegawai'}
             </button>
@@ -592,9 +602,17 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
       )}
 
       <div className="st-surface border rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b st-border st-surface-muted flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 flex-1">
-            <div className="relative flex-1 max-w-md">
+        <div
+          className={`px-3.5 sm:px-4 py-3 border-b st-border st-surface-muted flex justify-between gap-3 ${
+            isMobileLayout ? 'flex-col items-stretch' : 'flex-col sm:flex-row sm:items-center'
+          }`}
+        >
+          <div
+            className={`flex gap-2.5 flex-1 ${
+              isMobileLayout ? 'flex-col' : 'flex-col sm:flex-row sm:items-center'
+            }`}
+          >
+            <div className={`relative flex-1 ${isMobileLayout ? '' : 'max-w-md'}`}>
               <Search className="w-4 h-4 st-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
@@ -604,7 +622,7 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
                   setPage(1);
                 }}
                 placeholder="Cari nama, NIP, pangkat, atau jabatan..."
-                className="w-full pl-9 pr-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                className="w-full min-h-[44px] pl-9 pr-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
               />
             </div>
             <select
@@ -614,7 +632,7 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
                 setPage(1);
               }}
               aria-label="Filter unit kerja"
-              className="px-3 py-2 text-xs font-medium st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+              className="min-h-[44px] px-3 py-2 text-xs font-medium st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
             >
               <option value="semua">Semua Unit Kerja</option>
               <option value="kantor">Kantor Kemenag / Seksi</option>
@@ -651,7 +669,7 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+              <table className="w-full min-w-[660px] text-left border-collapse">
                 <thead>
                   <tr className="border-b st-border text-xs font-semibold st-text-secondary st-surface-muted">
                     <th className="py-2.5 px-4 w-14 text-center">No</th>
@@ -659,7 +677,7 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
                     <th className="py-2.5 px-4">NIP</th>
                     <th className="py-2.5 px-4">Pangkat / Golongan</th>
                     <th className="py-2.5 px-4">Jabatan</th>
-                    <th className="py-2.5 px-4 text-right w-40">Aksi</th>
+                    <th className="py-2.5 px-4 text-right w-44">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 night:divide-[#e4d5b3] dark:divide-slate-700/70 text-sm">
@@ -686,7 +704,7 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
                             type="button"
                             onClick={() => onUsePegawaiInSurat(peg)}
                             title="Masukkan ke Surat Tugas aktif"
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-md transition-colors whitespace-nowrap shrink-0"
+                            className="min-h-[40px] inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-md transition-colors whitespace-nowrap shrink-0"
                           >
                             <UserPlus className="w-3.5 h-3.5" />
                             Pakai
@@ -695,7 +713,7 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
                             type="button"
                             onClick={() => requestEdit(peg)}
                             title="Ubah pegawai"
-                            className="p-1.5 st-text-muted hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700/60 rounded-md transition-colors"
+                            className="min-w-[40px] min-h-[40px] inline-flex items-center justify-center p-1.5 st-text-muted hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700/60 rounded-md transition-colors"
                             aria-label={`Ubah ${peg.nama}`}
                           >
                             <Pencil className="w-3.5 h-3.5" />
@@ -704,7 +722,7 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
                             type="button"
                             onClick={() => requestDelete(peg)}
                             title="Hapus pegawai"
-                            className="p-1.5 st-text-muted hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-md transition-colors"
+                            className="min-w-[40px] min-h-[40px] inline-flex items-center justify-center p-1.5 st-text-muted hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-md transition-colors"
                             aria-label={`Hapus ${peg.nama}`}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -718,17 +736,17 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
             </div>
 
             {totalPages > 1 && (
-              <div className="px-4 py-3 border-t st-border st-surface-muted flex items-center justify-between gap-4">
+              <div className="px-4 py-3 border-t st-border st-surface-muted flex flex-wrap items-center justify-between gap-3">
                 <span className="text-xs st-text-secondary font-mono-tabular">
                   Menampilkan {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, filtered.length)} dari{' '}
                   {filtered.length.toLocaleString('id-ID')}
                 </span>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     disabled={safePage <= 1}
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium st-text-secondary st-surface border rounded-md hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap shrink-0"
+                    className="min-h-[44px] inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium st-text-secondary st-surface border rounded-md hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap shrink-0"
                   >
                     <ChevronLeft className="w-3.5 h-3.5" />
                     Sebelumnya
@@ -740,7 +758,7 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
                     type="button"
                     disabled={safePage >= totalPages}
                     onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium st-text-secondary st-surface border rounded-md hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap shrink-0"
+                    className="min-h-[44px] inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium st-text-secondary st-surface border rounded-md hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap shrink-0"
                   >
                     Berikutnya
                     <ChevronRight className="w-3.5 h-3.5" />
@@ -754,9 +772,17 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
 
       {/* MODAL PERINGATAN SEBELUM EDIT PEGAWAI SECARA MANUAL */}
       {editWarningTarget && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-[1px] flex items-center justify-center p-4">
-          <div className="st-surface rounded-xl border shadow-xl w-full max-w-md overflow-hidden">
-            <div className="px-5 py-4 border-b st-border flex items-center justify-between bg-amber-50/70 night:bg-[#f5ecd5] dark:bg-amber-950/35">
+        <div
+          className={`fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-[1px] flex items-center justify-center ${
+            isMobileLayout ? 'p-0' : 'p-4'
+          } ${isForcedMobile ? 'max-w-[430px] mx-auto' : ''}`}
+        >
+          <div
+            className={`st-surface w-full overflow-hidden flex flex-col ${
+              isMobileLayout ? 'h-full rounded-none border-0' : 'rounded-xl border shadow-xl max-w-md'
+            }`}
+          >
+            <div className="px-4 sm:px-5 py-3.5 border-b st-border flex items-center justify-between bg-amber-50/70 night:bg-[#f5ecd5] dark:bg-amber-950/35 shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0">
                   <AlertTriangle className="w-4 h-4" />
@@ -768,13 +794,13 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
               <button
                 type="button"
                 onClick={() => setEditWarningTarget(null)}
-                className="p-1.5 st-text-muted hover:text-slate-700 dark:hover:text-slate-200 rounded-md"
+                className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center st-text-muted hover:text-slate-700 dark:hover:text-slate-200 rounded-lg"
                 aria-label="Tutup peringatan ubah pegawai"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-5 space-y-3 text-xs st-text-secondary">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3 text-xs st-text-secondary">
               <p className="leading-relaxed">
                 Anda akan mengubah data pegawai berikut secara manual pada direktori aplikasi:
               </p>
@@ -788,20 +814,24 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
                 Perubahan manual akan langsung dipakai sebagai data pengisian Surat Tugas. Untuk pembaruan massal sesuai SK/SISDM terbaru, gunakan tombol <strong>Update DUK (PDF)</strong>.
               </p>
             </div>
-            <div className="px-5 py-3.5 st-surface-muted border-t st-border flex items-center justify-end gap-2">
+            <div
+              className={`px-4 sm:px-5 py-3.5 st-surface-muted border-t st-border flex gap-2 shrink-0 ${
+                isMobileLayout ? 'flex-col-reverse' : 'items-center justify-end'
+              }`}
+            >
               <button
                 type="button"
                 onClick={() => setEditWarningTarget(null)}
-                className="px-4 py-2 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90"
+                className="min-h-[44px] px-4 py-2 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90"
               >
                 Batal
               </button>
               <button
                 type="button"
                 onClick={confirmOpenEdit}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-amber-600 rounded-lg hover:bg-amber-700"
+                className="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-amber-600 rounded-lg hover:bg-amber-700"
               >
-                <Pencil className="w-3.5 h-3.5" />
+                <Pencil className="w-4 h-4" />
                 Ya, Lanjut Ubah
               </button>
             </div>
@@ -811,10 +841,18 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
 
       {/* MODAL PERINGATAN 2 KALI UNTUK HAPUS PEGAWAI SECARA MANUAL */}
       {deleteConfirm && (
-        <div className="fixed inset-0 z-50 bg-slate-900/55 backdrop-blur-[1px] flex items-center justify-center p-4">
-          <div className="st-surface rounded-xl border shadow-xl w-full max-w-md overflow-hidden">
+        <div
+          className={`fixed inset-0 z-50 bg-slate-900/55 backdrop-blur-[1px] flex items-center justify-center ${
+            isMobileLayout ? 'p-0' : 'p-4'
+          } ${isForcedMobile ? 'max-w-[430px] mx-auto' : ''}`}
+        >
+          <div
+            className={`st-surface w-full overflow-hidden flex flex-col ${
+              isMobileLayout ? 'h-full rounded-none border-0' : 'rounded-xl border shadow-xl max-w-md'
+            }`}
+          >
             <div
-              className={`px-5 py-4 border-b st-border flex items-center justify-between ${
+              className={`px-4 sm:px-5 py-3.5 border-b st-border flex items-center justify-between shrink-0 ${
                 deleteConfirm.step === 2
                   ? 'bg-red-50 dark:bg-red-950/40'
                   : 'bg-amber-50/70 night:bg-[#f5ecd5] dark:bg-amber-950/35'
@@ -848,13 +886,13 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
               <button
                 type="button"
                 onClick={() => setDeleteConfirm(null)}
-                className="p-1.5 st-text-muted hover:text-slate-700 dark:hover:text-slate-200 rounded-md"
+                className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center st-text-muted hover:text-slate-700 dark:hover:text-slate-200 rounded-lg"
                 aria-label="Tutup konfirmasi hapus"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-5 space-y-3 text-xs st-text-secondary">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3 text-xs st-text-secondary">
               <div className="p-3 st-surface-muted border rounded-lg space-y-1">
                 <div className="font-semibold st-text-primary">
                   {deleteConfirm.pegawai.nama}
@@ -875,11 +913,15 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
                 </div>
               )}
             </div>
-            <div className="px-5 py-3.5 st-surface-muted border-t st-border flex items-center justify-end gap-2">
+            <div
+              className={`px-4 sm:px-5 py-3.5 st-surface-muted border-t st-border flex gap-2 shrink-0 ${
+                isMobileLayout ? 'flex-col-reverse' : 'items-center justify-end'
+              }`}
+            >
               <button
                 type="button"
                 onClick={() => setDeleteConfirm(null)}
-                className="px-4 py-2 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90"
+                className="min-h-[44px] px-4 py-2 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90"
               >
                 Batal, Jangan Hapus
               </button>
@@ -889,7 +931,7 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
                   onClick={() =>
                     setDeleteConfirm({ ...deleteConfirm, step: 2 })
                   }
-                  className="px-4 py-2 text-xs font-semibold text-white bg-amber-600 rounded-lg hover:bg-amber-700"
+                  className="min-h-[44px] px-4 py-2 text-xs font-semibold text-white bg-amber-600 rounded-lg hover:bg-amber-700"
                 >
                   Lanjut ke Peringatan 2/2
                 </button>
@@ -897,9 +939,9 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
                 <button
                   type="button"
                   onClick={confirmFinalDelete}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700"
+                  className="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <Trash2 className="w-4 h-4" />
                   Ya, Hapus Permanen
                 </button>
               )}
@@ -910,10 +952,18 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
 
       {/* MODAL PERINGATAN 2 KALI UNTUK UPDATE DATA DUK VIA PDF */}
       {dukConfirm && pendingImport && (
-        <div className="fixed inset-0 z-50 bg-slate-900/55 backdrop-blur-[1px] flex items-center justify-center p-4">
-          <div className="st-surface rounded-xl border shadow-xl w-full max-w-lg overflow-hidden">
+        <div
+          className={`fixed inset-0 z-50 bg-slate-900/55 backdrop-blur-[1px] flex items-center justify-center ${
+            isMobileLayout ? 'p-0' : 'p-4'
+          } ${isForcedMobile ? 'max-w-[430px] mx-auto' : ''}`}
+        >
+          <div
+            className={`st-surface w-full overflow-hidden flex flex-col ${
+              isMobileLayout ? 'h-full rounded-none border-0' : 'rounded-xl border shadow-xl max-w-lg'
+            }`}
+          >
             <div
-              className={`px-5 py-4 border-b st-border flex items-center justify-between ${
+              className={`px-4 sm:px-5 py-3.5 border-b st-border flex items-center justify-between shrink-0 ${
                 dukConfirm.step === 2
                   ? 'bg-red-50 dark:bg-red-950/40'
                   : 'bg-amber-50/70 night:bg-[#f5ecd5] dark:bg-amber-950/35'
@@ -949,13 +999,13 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
               <button
                 type="button"
                 onClick={() => setDukConfirm(null)}
-                className="p-1.5 st-text-muted hover:text-slate-700 dark:hover:text-slate-200 rounded-md"
+                className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center st-text-muted hover:text-slate-700 dark:hover:text-slate-200 rounded-lg"
                 aria-label="Tutup peringatan update DUK"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-5 space-y-3 text-xs st-text-secondary">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3 text-xs st-text-secondary">
               <div className="p-3 st-surface-muted border rounded-lg space-y-1.5">
                 <div className="flex items-center justify-between gap-2">
                   <span className="st-text-muted">File PDF DUK:</span>
@@ -997,11 +1047,15 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
                 </div>
               )}
             </div>
-            <div className="px-5 py-3.5 st-surface-muted border-t st-border flex items-center justify-end gap-2">
+            <div
+              className={`px-4 sm:px-5 py-3.5 st-surface-muted border-t st-border flex gap-2 shrink-0 ${
+                isMobileLayout ? 'flex-col-reverse' : 'items-center justify-end'
+              }`}
+            >
               <button
                 type="button"
                 onClick={() => setDukConfirm(null)}
-                className="px-4 py-2 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90"
+                className="min-h-[44px] px-4 py-2 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90"
               >
                 Batal
               </button>
@@ -1009,7 +1063,7 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
                 <button
                   type="button"
                   onClick={() => setDukConfirm({ ...dukConfirm, step: 2 })}
-                  className="px-4 py-2 text-xs font-semibold text-white bg-amber-600 rounded-lg hover:bg-amber-700"
+                  className="min-h-[44px] px-4 py-2 text-xs font-semibold text-white bg-amber-600 rounded-lg hover:bg-amber-700"
                 >
                   Lanjut ke Peringatan 2/2
                 </button>
@@ -1017,9 +1071,9 @@ export const PegawaiManager: React.FC<PegawaiManagerProps> = ({
                 <button
                   type="button"
                   onClick={confirmApplyImport}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E]"
+                  className="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E]"
                 >
-                  <RefreshCw className="w-3.5 h-3.5" />
+                  <RefreshCw className="w-4 h-4" />
                   Ya, Terapkan Pembaruan DUK
                 </button>
               )}
