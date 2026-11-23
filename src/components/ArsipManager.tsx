@@ -48,10 +48,10 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">
-            Arsip Draft Surat Tugas
+            Daftar Draft Surat Tugas
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            Daftar Surat Tugas yang disimpan di peramban ini untuk dibuka kembali, dikirim ke Google Sheets, atau dicetak ulang.
+            Draft tersimpan di penyimpanan lokal peramban ini untuk dibuka kembali, dicatat ke Google Sheets, atau diunduh ke Word (.docx).
           </p>
         </div>
         <button
@@ -105,10 +105,10 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
         {arsipList.length === 0 ? (
           <div className="py-16 px-6 text-center">
             <p className="text-sm font-medium text-slate-900">
-              Belum ada Surat Tugas yang diarsipkan
+              Belum ada Draft Surat Tugas tersimpan
             </p>
             <p className="text-xs text-slate-500 mt-1 mb-4">
-              Klik tombol &ldquo;Simpan Arsip&rdquo; pada bilah alat pratinjau untuk menyimpan draft Surat Tugas Anda.
+              Klik tombol &ldquo;Simpan ke Draft&rdquo; pada form editor atau bilah alat pratinjau untuk menyimpan surat ke daftar draft lokal.
             </p>
             <button
               type="button"
@@ -120,21 +120,33 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
           </div>
         ) : filtered.length === 0 ? (
           <div className="py-12 px-6 text-center text-sm text-slate-500">
-            Tidak ada arsip yang cocok dengan filter saat ini.
+            Tidak ada draft yang cocok dengan filter saat ini.
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
             {filtered.map((item) => {
               const firstName = item.data.pegawaiList[0]?.nama || 'Belum ada pegawai';
               const totalPegawai = item.data.pegawaiList.length;
+              const isTercatat = item.status === 'Tercatat';
               return (
                 <div
                   key={item.id}
                   className="px-5 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-50/70 transition-colors"
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm font-semibold text-slate-900 line-clamp-1">
-                      {item.data.namaKegiatan || 'Kegiatan belum diisi'}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`px-2 py-0.5 text-[11px] font-semibold rounded-md border ${
+                          isTercatat
+                            ? 'bg-emerald-50 text-[#0B5D3B] border-emerald-200'
+                            : 'bg-amber-50 text-amber-800 border-amber-200'
+                        }`}
+                      >
+                        {isTercatat ? 'Tercatat' : 'Draft'}
+                      </span>
+                      <div className="text-sm font-semibold text-slate-900 line-clamp-1">
+                        {item.data.namaKegiatan || 'Kegiatan belum diisi'}
+                      </div>
                     </div>
                     <div className="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                       <span>{KRITERIA_LABELS[item.data.kriteria]}</span>
@@ -161,7 +173,7 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
                       className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#0B5D3B] bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors whitespace-nowrap shrink-0"
                     >
                       <FileSpreadsheet className="w-3.5 h-3.5" />
-                      Kirim ke Sheets
+                      {isTercatat ? 'Perbarui di Sheets' : 'Kirim ke Sheets'}
                     </button>
                     <button
                       type="button"
@@ -175,7 +187,7 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
                       type="button"
                       onClick={() => onDeleteArsip(item.id)}
                       className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      aria-label="Hapus arsip"
+                      aria-label="Hapus draft"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>

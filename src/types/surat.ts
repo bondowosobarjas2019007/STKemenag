@@ -44,11 +44,15 @@ export interface SuratTugasData {
   // Penandatangan
   jabatanPenandatangan: string;
   namaPenandatangan: string;
+  statusSurat?: string;
 }
+
+export type StatusSurat = 'Draft' | 'Tercatat';
 
 export interface ArsipSurat {
   id: string;
   savedAt: string;
+  status?: StatusSurat;
   data: SuratTugasData;
 }
 

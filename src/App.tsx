@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { User } from 'firebase/auth';
 import {
-  BookmarkPlus,
   Check,
   ChevronDown,
   ChevronUp,
@@ -12,12 +11,14 @@ import {
   Plus,
   Printer,
   RotateCcw,
+  Save,
   Trash2,
   UserCheck,
   Users,
 } from 'lucide-react';
 import { ArsipManager } from './components/ArsipManager';
 import {
+  ConfirmDocxExportModal,
   ConfirmSheetsOverwriteModal,
   SheetsAuthPromptModal,
 } from './components/ConfirmSheetsActionModal';
@@ -202,6 +203,10 @@ export default function App() {
   const [pendingOutputAction, setPendingOutputAction] = useState<
     'print' | 'docx' | null
   >(null);
+  const [docxConfirmOpen, setDocxConfirmOpen] = useState<boolean>(false);
+  const [isProcessingDocxConfirm, setIsProcessingDocxConfirm] =
+    useState<boolean>(false);
+  const [docxConfirmError, setDocxConfirmError] = useState<string | null>(null);
 
   const isOwner = isOwnerAccount(googleUser?.email);
   const bridgeConnected = serverBridgeConfigured || Boolean(localBridgeUrl.trim());
@@ -367,6 +372,40 @@ export default function App() {
     [showToast]
   );
 
+  const upsertLocalDraftEntry = useCallback(
+    (targetSurat: SuratTugasData, status: 'Draft' | 'Tercatat') => {
+      const cloned: SuratTugasData = {
+        ...targetSurat,
+        statusSurat: status === 'Tercatat' ? 'Tercatat / Final' : 'Draft',
+        pegawaiList: targetSurat.pegawaiList.map((p) => ({ ...p })),
+      };
+      const nowIso = new Date().toISOString();
+      setArsipList((prev) => {
+        const existingIdx = prev.findIndex((item) => item.data.id === cloned.id);
+        if (existingIdx !== -1) {
+          const existing = prev[existingIdx];
+          const updated: ArsipSurat = {
+            ...existing,
+            savedAt: nowIso,
+            status,
+            data: cloned,
+          };
+          return [updated, ...prev.filter((_, i) => i !== existingIdx)];
+        }
+        return [
+          {
+            id: `arsip-${Date.now()}`,
+            savedAt: nowIso,
+            status,
+            data: cloned,
+          },
+          ...prev,
+        ];
+      });
+    },
+    []
+  );
+
   const syncDraftToGoogleSheets = useCallback(
     async (
       draft: SuratTugasData,
@@ -432,6 +471,7 @@ export default function App() {
           );
           setSheetRows(refreshed);
           setLastSyncedSignature(computeSuratSignature(draft));
+          upsertLocalDraftEntry(draft, 'Tercatat');
           setPendingOutputAction(null);
 
           showToast(
@@ -495,6 +535,7 @@ export default function App() {
           setSelectedYear(targetYear);
           await loadBridgeYearData(targetYear, customBridgeHeader);
           setLastSyncedSignature(computeSuratSignature(draft));
+          upsertLocalDraftEntry(draft, 'Tercatat');
           setPendingOutputAction(null);
 
           showToast(
@@ -534,6 +575,7 @@ export default function App() {
       loadBridgeYearData,
       runOutputAction,
       showToast,
+      upsertLocalDraftEntry,
     ]
   );
 
@@ -858,6 +900,7 @@ export default function App() {
         );
         await loadBridgeYearData(overwriteConfirm.year, customBridgeHeader);
         setLastSyncedSignature(computeSuratSignature(overwriteConfirm.draft));
+        upsertLocalDraftEntry(overwriteConfirm.draft, 'Tercatat');
         const savedDraft = overwriteConfirm.draft;
         showToast(
           `Baris ${overwriteConfirm.rowNumber} di Sheet ${overwriteConfirm.year} diperbarui`
@@ -902,6 +945,7 @@ export default function App() {
       );
       setSheetRows(refreshed);
       setLastSyncedSignature(computeSuratSignature(overwriteConfirm.draft));
+      upsertLocalDraftEntry(overwriteConfirm.draft, 'Tercatat');
       const savedDraft = overwriteConfirm.draft;
       showToast(
         `Baris ${overwriteConfirm.rowNumber} di Sheet ${overwriteConfirm.year} diperbarui`
@@ -1092,17 +1136,9 @@ export default function App() {
     showToast(`${selectedList.length} pegawai ditambahkan ke Surat Tugas`);
   };
 
-  const handleSaveToArsip = () => {
-    const newEntry: ArsipSurat = {
-      id: `arsip-${Date.now()}`,
-      savedAt: new Date().toISOString(),
-      data: {
-        ...surat,
-        pegawaiList: surat.pegawaiList.map((p) => ({ ...p })),
-      },
-    };
-    setArsipList((prev) => [newEntry, ...prev]);
-    showToast('Surat Tugas disimpan ke Arsip Draft');
+  const handleSaveToDraft = () => {
+    upsertLocalDraftEntry(surat, 'Draft');
+    showToast('Surat berhasil disimpan ke Draft');
   };
 
   const handlePrintPdf = async () => {
@@ -1119,18 +1155,138 @@ export default function App() {
     await syncDraftToGoogleSheets(surat, undefined, 'print');
   };
 
-  const handleExportDocx = async () => {
+  const handleExportDocx = () => {
     if (!isSuratReadyForTracking(surat)) {
       showToast(
         'Lengkapi isi Surat Tugas (kegiatan/dasar & pegawai) terlebih dahulu sebelum mengunduh'
       );
       return;
     }
-    if (lastSyncedSignature === computeSuratSignature(surat)) {
-      await runOutputAction('docx', surat);
-      return;
+    setDocxConfirmError(null);
+    setDocxConfirmOpen(true);
+  };
+
+  const handleConfirmRecordAndDownloadDocx = async () => {
+    if (isProcessingDocxConfirm) return;
+    setIsProcessingDocxConfirm(true);
+    setDocxConfirmError(null);
+
+    const finalSurat: SuratTugasData = {
+      ...surat,
+      statusSurat: 'Tercatat / Final',
+      pegawaiList: surat.pegawaiList.map((p) => ({ ...p })),
+    };
+    const targetYear = getTargetYearForSurat(finalSurat);
+    const token = getAccessToken();
+    const canUseOwnerDirect = Boolean(token) && isOwnerAccount(googleUser?.email);
+
+    try {
+      // Langkah A: Catat otomatis ke Google Sheets (Upsert berdasarkan ID Surat)
+      if (bridgeConnected) {
+        await upsertSuratViaBridge(
+          targetYear,
+          finalSurat,
+          true,
+          customBridgeHeader
+        );
+        setSelectedYear(targetYear);
+        void loadBridgeYearData(targetYear, customBridgeHeader);
+      } else if (canUseOwnerDirect && token) {
+        const summary = await ensureConnectedSpreadsheet(token, targetYear);
+        const { summary: ensuredSummary } = await ensureYearSheet(
+          summary.spreadsheetId,
+          targetYear,
+          token
+        );
+        setSpreadsheet(ensuredSummary);
+        setSelectedYear(targetYear);
+
+        const { existingRowNumber, nextRowNumberDisplay } =
+          await checkExistingRecordRow(
+            ensuredSummary.spreadsheetId,
+            targetYear,
+            finalSurat.id,
+            token
+          );
+
+        if (existingRowNumber !== null) {
+          await updateExistingSuratRow(
+            ensuredSummary.spreadsheetId,
+            targetYear,
+            existingRowNumber,
+            finalSurat,
+            token
+          );
+        } else {
+          await appendSuratToYearSheet(
+            ensuredSummary.spreadsheetId,
+            targetYear,
+            nextRowNumberDisplay,
+            finalSurat,
+            token
+          );
+        }
+
+        const refreshed = await fetchRowsForSheet(
+          ensuredSummary.spreadsheetId,
+          targetYear,
+          token
+        );
+        setSheetRows(refreshed);
+      } else {
+        throw new Error(
+          'Jembatan Apps Script (APPS_SCRIPT_WEBHOOK_URL) belum aktif dan akun Google Pemilik belum terhubung.'
+        );
+      }
+
+      // Perbarui status lokal & form aktif menjadi Tercatat
+      setSurat(finalSurat);
+      setLastSyncedSignature(computeSuratSignature(finalSurat));
+      upsertLocalDraftEntry(finalSurat, 'Tercatat');
+
+      // Langkah B: Unduh file .docx segera setelah pencatatan Google Sheets berhasil
+      setIsExportingDocx(true);
+      try {
+        await exportSuratTugasDocx(finalSurat);
+      } finally {
+        setIsExportingDocx(false);
+      }
+
+      setDocxConfirmOpen(false);
+      setDocxConfirmError(null);
+      showToast('Surat berhasil dicatat di Worksheet dan file .docx diunduh');
+    } catch (err) {
+      if (err instanceof SheetsAuthError) {
+        clearAccessToken();
+        setNeedsAuth(true);
+      }
+      const msg =
+        err instanceof Error
+          ? err.message
+          : 'Gagal mencatat data ke Google Sheets. Periksa koneksi internet atau konfigurasi Apps Script.';
+      setDocxConfirmError(msg);
+    } finally {
+      setIsProcessingDocxConfirm(false);
     }
-    await syncDraftToGoogleSheets(surat, undefined, 'docx');
+  };
+
+  const handleForceDownloadDocxOnly = async () => {
+    if (isProcessingDocxConfirm) return;
+    setIsProcessingDocxConfirm(true);
+    setIsExportingDocx(true);
+    try {
+      await exportSuratTugasDocx(surat);
+      setDocxConfirmOpen(false);
+      setDocxConfirmError(null);
+      showToast('File .docx diunduh (belum tercatat di Worksheet Google Sheets)');
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : 'Gagal mengekspor file .docx.';
+      setDocxConfirmError(msg);
+    } finally {
+      setIsExportingDocx(false);
+      setIsProcessingDocxConfirm(false);
+    }
   };
 
   const handleUsePegawaiFromManager = (peg: Pegawai) => {
@@ -1309,7 +1465,7 @@ export default function App() {
                 : 'text-slate-600 border-transparent hover:text-slate-900'
             }`}
           >
-            Arsip Draft ({arsipList.length})
+            Daftar Draft ({arsipList.length})
           </button>
         </nav>
 
@@ -1476,12 +1632,12 @@ export default function App() {
                 pegawaiList: item.data.pegawaiList.map((p) => ({ ...p })),
               });
               setActiveTab('editor');
-              showToast('Draft arsip dimuat ke editor');
+              showToast('Draft dimuat ke editor');
             }}
             onSyncArsipToSheets={(item) => void syncDraftToGoogleSheets(item.data)}
             onDeleteArsip={(id) => {
               setArsipList((prev) => prev.filter((a) => a.id !== id));
-              showToast('Arsip dihapus');
+              showToast('Draft dihapus');
             }}
             onGoToEditor={() => setActiveTab('editor')}
           />
@@ -2102,6 +2258,27 @@ export default function App() {
                 </div>
               )}
             </div>
+
+            {/* EDITOR ACTION FOOTER */}
+            <div className="pt-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2.5">
+              <button
+                type="button"
+                onClick={handleSaveToDraft}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
+              >
+                <Save className="w-3.5 h-3.5 text-[#0B5D3B]" />
+                Simpan ke Draft
+              </button>
+              <button
+                type="button"
+                disabled={isExportingDocx || isSyncingSheets || isProcessingDocxConfirm}
+                onClick={handleExportDocx}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
+              >
+                <Download className="w-3.5 h-3.5" />
+                {isExportingDocx ? 'Menyiapkan...' : 'Unduh .docx'}
+              </button>
+            </div>
           </div>
         </section>
 
@@ -2160,11 +2337,11 @@ export default function App() {
 
               <button
                 type="button"
-                onClick={handleSaveToArsip}
+                onClick={handleSaveToDraft}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
               >
-                <BookmarkPlus className="w-3.5 h-3.5" />
-                Simpan Arsip
+                <Save className="w-3.5 h-3.5 text-[#0B5D3B]" />
+                Simpan ke Draft
               </button>
 
               <button
@@ -2183,16 +2360,16 @@ export default function App() {
 
               <button
                 type="button"
-                disabled={isExportingDocx || isSyncingSheets}
-                onClick={() => void handleExportDocx()}
+                disabled={isExportingDocx || isSyncingSheets || isProcessingDocxConfirm}
+                onClick={handleExportDocx}
                 className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
               >
                 <Download className="w-3.5 h-3.5" />
                 {isExportingDocx
                   ? 'Menyiapkan...'
-                  : isSyncingSheets
+                  : isSyncingSheets || isProcessingDocxConfirm
                     ? 'Menyimpan ke Sheets...'
-                    : 'Unduh Word (.docx)'}
+                    : 'Unduh .docx'}
               </button>
             </div>
           </div>
@@ -2267,6 +2444,22 @@ export default function App() {
         onCancel={() => {
           setOverwriteConfirm(null);
           setPendingOutputAction(null);
+        }}
+      />
+
+      {/* KONFIRMASI UNDUH .DOCX & PENCATATAN OTOMATIS WORKSHEET */}
+      <ConfirmDocxExportModal
+        isOpen={docxConfirmOpen}
+        namaKegiatan={surat.namaKegiatan}
+        targetYear={getTargetYearForSurat(surat)}
+        isBusy={isProcessingDocxConfirm}
+        errorMessage={docxConfirmError}
+        onConfirmRecordAndDownload={() => void handleConfirmRecordAndDownloadDocx()}
+        onForceDownloadOnly={() => void handleForceDownloadDocxOnly()}
+        onCancel={() => {
+          if (isProcessingDocxConfirm) return;
+          setDocxConfirmOpen(false);
+          setDocxConfirmError(null);
         }}
       />
     </div>

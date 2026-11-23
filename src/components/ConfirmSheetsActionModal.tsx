@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, FileSpreadsheet, X } from 'lucide-react';
+import { AlertTriangle, Download, FileSpreadsheet, Loader2, X } from 'lucide-react';
 import { GoogleSignInButton } from './GoogleSignInButton';
 
 interface ConfirmSheetsOverwriteModalProps {
@@ -82,6 +82,131 @@ export const ConfirmSheetsOverwriteModal: React.FC<
             className="px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60 transition-colors"
           >
             {isBusy ? 'Menyimpan...' : 'Ya, Perbarui Baris'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+interface ConfirmDocxExportModalProps {
+  isOpen: boolean;
+  namaKegiatan: string;
+  targetYear: string;
+  isBusy: boolean;
+  errorMessage: string | null;
+  onConfirmRecordAndDownload: () => void;
+  onForceDownloadOnly: () => void;
+  onCancel: () => void;
+}
+
+export const ConfirmDocxExportModal: React.FC<ConfirmDocxExportModalProps> = ({
+  isOpen,
+  namaKegiatan,
+  targetYear,
+  isBusy,
+  errorMessage,
+  onConfirmRecordAndDownload,
+  onForceDownloadOnly,
+  onCancel,
+}) => {
+  if (!isOpen) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 no-print"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Konfirmasi Unduh dan Pencatatan Surat"
+    >
+      <div className="w-full max-w-md bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 bg-emerald-50/50">
+          <div className="flex items-center gap-2">
+            <FileSpreadsheet className="w-4 h-4 text-[#0B5D3B] shrink-0" />
+            <h2 className="text-sm font-semibold text-slate-900">
+              Konfirmasi Unduh &amp; Pencatatan Surat
+            </h2>
+          </div>
+          <button
+            type="button"
+            disabled={isBusy}
+            onClick={onCancel}
+            className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md disabled:opacity-40"
+            aria-label="Tutup konfirmasi unduh"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="px-5 py-4 text-xs text-slate-600 space-y-3 leading-relaxed">
+          <p className="text-slate-800 text-[13px] leading-relaxed">
+            Apakah Anda akan mengunduh file .docx ini? Bila Ya, surat akan dicatat di Worksheet (Google Sheets) otomatis.
+          </p>
+
+          <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg space-y-1">
+            <div className="text-[11px] font-medium text-slate-500">
+              Tab Tahun {targetYear} · Status: Tercatat / Final
+            </div>
+            <div className="text-slate-900 font-medium line-clamp-2">
+              {namaKegiatan || 'Surat Tugas Kemenag Jember'}
+            </div>
+          </div>
+
+          {errorMessage && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-900 space-y-1.5">
+              <div className="flex items-center gap-1.5 font-semibold text-red-800">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" />
+                <span>Gagal Mencatat ke Google Sheets</span>
+              </div>
+              <p className="text-[11px] leading-relaxed text-red-800">
+                {errorMessage}
+              </p>
+              <p className="text-[11px] text-red-700">
+                Jika dalam kondisi darurat/koneksi terputus, Anda tetap dapat mengunduh file Word melalui tombol <strong>Tetap Unduh .docx Saja</strong> di bawah.
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
+            disabled={isBusy}
+            onClick={onCancel}
+            className="px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
+          >
+            Batal
+          </button>
+
+          {errorMessage && (
+            <button
+              type="button"
+              disabled={isBusy}
+              onClick={onForceDownloadOnly}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-amber-900 bg-amber-100 border border-amber-300 rounded-lg hover:bg-amber-200 disabled:opacity-50 transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Tetap Unduh .docx Saja
+            </button>
+          )}
+
+          <button
+            type="button"
+            disabled={isBusy}
+            onClick={onConfirmRecordAndDownload}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60 transition-colors"
+          >
+            {isBusy ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                Menyimpan ke Worksheet...
+              </>
+            ) : (
+              <>
+                <Download className="w-3.5 h-3.5" />
+                Ya, Catat &amp; Unduh
+              </>
+            )}
           </button>
         </div>
       </div>

@@ -389,6 +389,11 @@ function buildRowValues(
     ? '${nomor_naskah} (Srikandi)'
     : surat.nomorSurat || '-';
 
+  const payloadDraft: SuratTugasData = {
+    ...surat,
+    statusSurat: surat.statusSurat || 'Tercatat / Final',
+  };
+
   return [
     rowNumberDisplay,
     surat.id,
@@ -406,7 +411,7 @@ function buildRowValues(
     validPegawai.length,
     pegawaiSummary || '-',
     surat.namaPenandatangan || 'Kepala Kantor',
-    JSON.stringify(surat),
+    JSON.stringify(payloadDraft),
   ];
 }
 
@@ -800,22 +805,37 @@ export async function upsertSuratViaBridge(
   overwriteConfirmed: boolean,
   customWebhookUrl?: string
 ): Promise<BridgeUpsertResponse> {
-  const rowValues = buildRowValues(1, surat);
-  const res = await fetch('/api/sheets-tracking', {
-    method: 'POST',
-    headers: buildBridgeHeaders(customWebhookUrl),
-    body: JSON.stringify({
-      action: 'upsert',
-      year,
-      suratId: surat.id,
-      rowValues,
-      overwriteConfirmed,
-    }),
-  });
+  const normalizedSurat: SuratTugasData = {
+    ...surat,
+    statusSurat: surat.statusSurat || 'Tercatat / Final',
+  };
+  const rowValues = buildRowValues(1, normalizedSurat);
+  let res: Response;
+  try {
+    res = await fetch('/api/sheets-tracking', {
+      method: 'POST',
+      headers: buildBridgeHeaders(customWebhookUrl),
+      body: JSON.stringify({
+        action: 'upsert',
+        year,
+        suratId: normalizedSurat.id,
+        status: normalizedSurat.statusSurat,
+        rowValues,
+        overwriteConfirmed,
+      }),
+    });
+  } catch (err) {
+    throw new Error(
+      err instanceof Error
+        ? `Koneksi ke server Google Sheets terputus (${err.message}).`
+        : 'Tidak dapat terhubung ke jaringan atau jembatan Google Sheets.'
+    );
+  }
   const data = (await res.json().catch(() => ({}))) as BridgeUpsertResponse;
   if (!res.ok || data.ok === false) {
     throw new Error(
-      data?.error || 'Gagal menyimpan Surat Tugas ke spreadsheet pemilik.'
+      data?.error ||
+        `Gagal menyimpan Surat Tugas ke Google Sheets (HTTP ${res.status}).`
     );
   }
   return data;
