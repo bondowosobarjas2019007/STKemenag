@@ -239,11 +239,20 @@ export const SAMPLE_TEMPLATES: Record<KriteriaKeberangkatan, SuratTugasData> = {
   },
 };
 
-export function createEmptyDraft(kriteria: KriteriaKeberangkatan = 'sendiri'): SuratTugasData {
+export function createEmptyDraft(
+  kriteria: KriteriaKeberangkatan = 'sendiri',
+  options?: { emptyPegawai?: boolean }
+): SuratTugasData {
   const today = new Date().toISOString().slice(0, 10);
-  const count = kriteria === 'sendiri' ? 1 : kriteria === 'tiga_orang' ? 2 : 4;
+  const count = options?.emptyPegawai
+    ? 0
+    : kriteria === 'sendiri'
+      ? 1
+      : kriteria === 'tiga_orang'
+        ? 2
+        : 4;
   return {
-    id: `draft-${Date.now()}`,
+    id: `draft-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     kriteria,
     modeSrikandi: true,
     nomorSurat: '',
@@ -269,4 +278,5 @@ export function createEmptyDraft(kriteria: KriteriaKeberangkatan = 'sendiri'): S
     namaPenandatangan: 'Dr. SANTOSO, S.Ag, M.Pd.',
   };
 }
+
 
