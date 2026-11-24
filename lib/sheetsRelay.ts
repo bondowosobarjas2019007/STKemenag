@@ -111,6 +111,8 @@ export interface RelayPostPayload {
   action?: 'upsert' | 'ensureYear';
   year?: string;
   suratId?: string;
+  recordType?: 'ST' | 'SPD';
+  spdId?: string;
   rowValues?: (string | number)[];
   overwriteConfirmed?: boolean;
 }
@@ -143,15 +145,16 @@ export async function handleRelayPost(
     };
   }
 
+  const effectiveId = payload.spdId || payload.suratId;
   if (action === 'upsert') {
     if (
-      !payload.suratId ||
+      !effectiveId ||
       !Array.isArray(payload.rowValues) ||
       payload.rowValues.length === 0
     ) {
       return {
         status: 400,
-        body: { ok: false, error: 'Data Surat Tugas tidak lengkap untuk disimpan.' },
+        body: { ok: false, error: 'Data tidak lengkap untuk disimpan ke Google Sheets.' },
       };
     }
   }
@@ -165,7 +168,9 @@ export async function handleRelayPost(
     body: JSON.stringify({
       action,
       year,
-      suratId: payload.suratId,
+      suratId: effectiveId,
+      recordType: payload.recordType || 'ST',
+      spdId: payload.spdId || (payload.recordType === 'SPD' ? effectiveId : undefined),
       rowValues: payload.rowValues,
       overwriteConfirmed:
         action === 'upsert' ? payload.overwriteConfirmed !== false : Boolean(payload.overwriteConfirmed),

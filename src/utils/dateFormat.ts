@@ -77,3 +77,35 @@ export function splitPangkatGolongan(value: string): { pangkat: string; golongan
   }
   return { pangkat: trimmed, golongan: '' };
 }
+
+export function computeDaysDifference(mulai: string, selesai: string): number {
+  if (!mulai) return 1;
+  const d1 = new Date(mulai).getTime();
+  const d2 = new Date(selesai || mulai).getTime();
+  if (isNaN(d1) || isNaN(d2)) return 1;
+  const diffDays = Math.round((d2 - d1) / (1000 * 60 * 60 * 24)) + 1;
+  return Math.max(1, diffDays);
+}
+
+export function terbilangHari(num: number): string {
+  const kata = [
+    '',
+    'Satu',
+    'Dua',
+    'Tiga',
+    'Empat',
+    'Lima',
+    'Enam',
+    'Tujuh',
+    'Delapan',
+    'Sembilan',
+    'Sepuluh',
+    'Sebelas',
+    'Dua Belas',
+    'Tiga Belas',
+    'Empat Belas',
+    'Lima Belas',
+  ];
+  const t = kata[num] || String(num);
+  return `${num} (${t}) Hari`;
+}

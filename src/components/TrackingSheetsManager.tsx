@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
 import {
   AlertCircle,
+  Briefcase,
   Check,
   ChevronDown,
   ChevronUp,
@@ -64,6 +65,7 @@ interface TrackingSheetsManagerProps {
   onCreateYearSheet: (year: string) => void;
   onRefreshRows: () => void;
   onLoadTrackedDraft: (draft: SuratTugasData, asTemplateCopy: boolean) => void;
+  onOpenSpd?: (draft: SuratTugasData) => void;
 }
 
 const KRITERIA_LABELS: Record<KriteriaKeberangkatan, string> = {
@@ -103,6 +105,7 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
   onCreateYearSheet,
   onRefreshRows,
   onLoadTrackedDraft,
+  onOpenSpd,
 }) => {
   const { isMobileLayout } = useViewport();
   const [query, setQuery] = useState('');
@@ -923,16 +926,29 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                           </td>
                           <td className="py-3 px-4 align-top text-right">
                             {row.rawDraft ? (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  onLoadTrackedDraft(row.rawDraft!, !isAdminMode)
-                                }
-                                className="min-h-[40px] inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-md transition-colors whitespace-nowrap shrink-0"
-                              >
-                                <FolderOpen className="w-3.5 h-3.5" />
-                                {isAdminMode ? 'Buka di Editor' : 'Salin ke Editor'}
-                              </button>
+                              <div className="inline-flex items-center justify-end gap-1.5 flex-wrap">
+                                {onOpenSpd && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onOpenSpd(row.rawDraft!)}
+                                    className="min-h-[40px] inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-amber-800 dark:text-amber-300 bg-amber-50 night:bg-amber-900/15 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/50 rounded-md transition-colors whitespace-nowrap shrink-0 border border-amber-200/60 dark:border-amber-800/40"
+                                    title="Buat SPD (Surat Perjalanan Dinas) dari ST ini"
+                                  >
+                                    <Briefcase className="w-3.5 h-3.5" />
+                                    Buat SPD
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    onLoadTrackedDraft(row.rawDraft!, !isAdminMode)
+                                  }
+                                  className="min-h-[40px] inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-md transition-colors whitespace-nowrap shrink-0"
+                                >
+                                  <FolderOpen className="w-3.5 h-3.5" />
+                                  {isAdminMode ? 'Buka di Editor' : 'Salin ke Editor'}
+                                </button>
+                              </div>
                             ) : (
                               <span className="text-[11px] st-text-muted">
                                 Hanya arsip tabel

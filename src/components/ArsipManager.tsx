@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  Briefcase,
   FileText,
   FolderOpen,
   Search,
   Trash2,
 } from 'lucide-react';
 import { useViewport } from '../contexts/ViewportContext';
-import { ArsipSurat, KriteriaKeberangkatan } from '../types/surat';
+import { ArsipSurat, KriteriaKeberangkatan, SuratTugasData } from '../types/surat';
 import { formatTanggalIndo } from '../utils/dateFormat';
 
 interface ArsipManagerProps {
@@ -14,6 +15,7 @@ interface ArsipManagerProps {
   onLoadArsip: (arsip: ArsipSurat) => void;
   onDeleteArsip: (id: string) => void;
   onGoToEditor: () => void;
+  onOpenSpd?: (draft: SuratTugasData) => void;
 }
 
 const KRITERIA_LABELS: Record<KriteriaKeberangkatan, string> = {
@@ -29,6 +31,7 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
   onLoadArsip,
   onDeleteArsip,
   onGoToEditor,
+  onOpenSpd,
 }) => {
   const { isMobileLayout } = useViewport();
   const [query, setQuery] = useState('');
@@ -286,6 +289,17 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      {onOpenSpd && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenSpd(item.data)}
+                          className="min-h-[44px] flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 rounded-lg transition-colors whitespace-nowrap shrink-0"
+                          title="Buat Surat Perjalanan Dinas (SPD) dari data surat ini"
+                        >
+                          <Briefcase className="w-3.5 h-3.5" />
+                          Buat SPD
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => onLoadArsip(item)}

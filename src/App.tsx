@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { User } from 'firebase/auth';
 import {
+  Briefcase,
   Check,
   ChevronDown,
   ChevronUp,
@@ -28,6 +29,7 @@ import {
   DuplicateSuratWarningModal,
   SheetsAuthPromptModal,
 } from './components/ConfirmSheetsActionModal';
+import { ConflictWarningModal } from './components/ConflictWarningModal';
 import {
   DasarPdfUploader,
   ParsedDasarPdfResult,
@@ -39,6 +41,7 @@ import {
 import { GoogleSignInButton } from './components/GoogleSignInButton';
 import { PegawaiDirectoryModal } from './components/PegawaiDirectoryModal';
 import { DukImportMode, PegawaiManager } from './components/PegawaiManager';
+import { SpdGeneratorModal } from './components/SpdGeneratorModal';
 import { SuratPreview } from './components/SuratPreview';
 import {
   applyThemeModeToDom,
@@ -68,6 +71,7 @@ import {
   fetchSheetsBridgeStatus,
   findDuplicateSuratAcrossSources,
   findOrCreateTrackingSpreadsheet,
+  findScheduleConflictsAcrossSources,
   generateSuratFingerprint,
   getSpreadsheetMetadata,
   getTargetYearForSurat,
@@ -80,6 +84,7 @@ import {
   syncMigrasiDatasetToSheets,
   TrackedSuratRow,
   updateExistingSuratRow,
+  upsertSpdViaBridge,
   upsertSuratViaBridge,
 } from './services/googleSheets';
 import {
@@ -93,6 +98,8 @@ import {
   PANGKAT_GOLONGAN_PRESETS,
   Pegawai,
   SAMPLE_TEMPLATES,
+  ScheduleConflict,
+  SpdFormData,
   SuratTugasData,
 } from './types/surat';
 import { exportSuratTugasDocx } from './utils/exportDocx';
@@ -273,6 +280,9 @@ export default function App() {
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const [autoSyncStatus, setAutoSyncStatus] = useState<AutoSyncStatus>('idle');
   const [autoSyncError, setAutoSyncError] = useState<string | null>(null);
+  const [spdModalSurat, setSpdModalSurat] = useState<SuratTugasData | null>(null);
+  const [scheduleConflicts, setScheduleConflicts] = useState<ScheduleConflict[]>([]);
+  const [pendingProceedAction, setPendingProceedAction] = useState<(() => void) | null>(null);
   const [copiedSourceRef, setCopiedSourceRef] = useState<{
     sourceId: string;
     fingerprint: string;
@@ -1423,10 +1433,58 @@ export default function App() {
     showToast(`${selectedList.length} pegawai ditambahkan ke Surat Tugas`);
   };
 
+  // Check schedule conflicts across sheet rows, local archive, and 2026 migration (Anti SPJ Ganda)
+  const checkConflictsAndProceed = useCallback(
+    (targetSurat: SuratTugasData, onProceed: () => void) => {
+      const targetYear = getTargetYearForSurat(targetSurat);
+      const extraMigrasi = targetYear === '2026' ? migrasiSt2026Items : [];
+      const conflicts = findScheduleConflictsAcrossSources(
+        targetSurat,
+        sheetRows,
+        arsipList,
+        extraMigrasi
+      );
+      if (conflicts.length > 0) {
+        setScheduleConflicts(conflicts);
+        setPendingProceedAction(() => onProceed);
+        return;
+      }
+      onProceed();
+    },
+    [sheetRows, arsipList, migrasiSt2026Items]
+  );
+
   const handleSaveToDraft = () => {
-    upsertLocalDraftEntry(surat, 'Draft');
-    showToast('Surat berhasil disimpan ke Draft');
+    checkConflictsAndProceed(surat, () => {
+      upsertLocalDraftEntry(surat, 'Draft');
+      showToast('Surat berhasil disimpan ke Draft');
+    });
   };
+
+  const handleOpenSpd = useCallback(
+    (targetSurat: SuratTugasData) => {
+      if (targetSurat.pegawaiList.length === 0) {
+        showToast(
+          'Tambahkan minimal 1 orang pegawai ke dalam Surat Tugas terlebih dahulu untuk membuat SPD'
+        );
+        return;
+      }
+      checkConflictsAndProceed(targetSurat, () => {
+        setSpdModalSurat(targetSurat);
+      });
+    },
+    [checkConflictsAndProceed, showToast]
+  );
+
+  const handleAutoSyncSpd = useCallback(
+    async (spd: SpdFormData) => {
+      const targetYear = spd.tanggalSpd
+        ? spd.tanggalSpd.slice(0, 4)
+        : String(new Date().getFullYear());
+      await upsertSpdViaBridge(targetYear, spd, customBridgeHeader);
+    },
+    [customBridgeHeader]
+  );
 
   const runFileExport = useCallback(
     async (format: ExportFormat, targetSurat: SuratTugasData) => {
@@ -1460,10 +1518,12 @@ export default function App() {
       debounceSyncTimerRef.current = null;
     }
 
-    setDownloadConfirmModal({
-      format,
-      errorMessage: null,
-      isBusy: false,
+    checkConflictsAndProceed(surat, () => {
+      setDownloadConfirmModal({
+        format,
+        errorMessage: null,
+        isBusy: false,
+      });
     });
   };
 
@@ -2714,6 +2774,7 @@ export default function App() {
                   : 'Data Surat Tugas dari Google Sheets dimuat ke editor'
               );
             }}
+            onOpenSpd={handleOpenSpd}
           />
         </main>
       )}
@@ -2744,6 +2805,7 @@ export default function App() {
               showToast('Draft dihapus');
             }}
             onGoToEditor={() => setActiveTab('editor')}
+            onOpenSpd={handleOpenSpd}
           />
         </main>
       )}
@@ -3378,7 +3440,7 @@ export default function App() {
             <div
               className={`relative z-20 overflow-visible pt-3 border-t st-border ${
                 isMobileLayout
-                  ? 'grid grid-cols-2 gap-2.5'
+                  ? 'flex flex-col sm:grid sm:grid-cols-3 gap-2'
                   : 'flex flex-wrap items-center justify-between gap-2.5'
               }`}
             >
@@ -3389,6 +3451,15 @@ export default function App() {
               >
                 <Save className="w-3.5 h-3.5 text-[#0B5D3B] dark:text-emerald-400" />
                 Simpan ke Draft
+              </button>
+              <button
+                type="button"
+                onClick={() => handleOpenSpd(surat)}
+                className="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-amber-900 dark:text-amber-200 bg-amber-50 night:bg-amber-900/20 dark:bg-amber-950/60 border border-amber-300/80 dark:border-amber-700/60 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors whitespace-nowrap shrink-0"
+                title="Buat SPD (Surat Perjalanan Dinas) dari Surat Tugas ini"
+              >
+                <Briefcase className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400" />
+                Buat SPD
               </button>
               <DownloadSplitButton
                 exportingFormat={exportingFormat}
@@ -3493,7 +3564,7 @@ export default function App() {
               <div
                 className={
                   isMobileLayout
-                    ? 'grid grid-cols-2 gap-2 w-full overflow-visible'
+                    ? 'flex flex-col sm:grid sm:grid-cols-3 gap-2 w-full overflow-visible'
                     : 'flex flex-wrap items-center gap-2 overflow-visible'
                 }
               >
@@ -3504,6 +3575,16 @@ export default function App() {
                 >
                   <Save className="w-3.5 h-3.5 text-[#0B5D3B] dark:text-emerald-400 shrink-0" />
                   <span className="truncate">Simpan ke Draft</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleOpenSpd(surat)}
+                  className="min-h-[44px] w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-medium text-amber-900 dark:text-amber-200 bg-amber-50 night:bg-amber-900/20 dark:bg-amber-950/60 border border-amber-300/80 dark:border-amber-700/60 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors whitespace-nowrap shrink-0"
+                  title="Buat SPD (Surat Perjalanan Dinas) dari Surat Tugas ini"
+                >
+                  <Briefcase className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400 shrink-0" />
+                  <span className="truncate">Buat SPD</span>
                 </button>
 
                 <DownloadSplitButton
@@ -3651,6 +3732,33 @@ export default function App() {
           }
         }}
       />
+
+      {/* CONFLICT SCHEDULE WARNING MODAL (ANTI SPJ GANDA) */}
+      <ConflictWarningModal
+        isOpen={scheduleConflicts.length > 0}
+        conflicts={scheduleConflicts}
+        onProceed={() => {
+          const act = pendingProceedAction;
+          setScheduleConflicts([]);
+          setPendingProceedAction(null);
+          act?.();
+        }}
+        onCancel={() => {
+          setScheduleConflicts([]);
+          setPendingProceedAction(null);
+        }}
+      />
+
+      {/* SPD GENERATOR MODAL */}
+      {spdModalSurat && (
+        <SpdGeneratorModal
+          isOpen={spdModalSurat !== null}
+          surat={spdModalSurat}
+          onClose={() => setSpdModalSurat(null)}
+          onAutoSyncSpd={handleAutoSyncSpd}
+          showToast={showToast}
+        />
+      )}
       </div>
     </div>
   );

@@ -28,11 +28,11 @@ const NO_BORDER = {
   right: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
 };
 
-const KOP_DOUBLE_BOTTOM_BORDER = {
+const KOP_SINGLE_BOTTOM_BORDER = {
   top: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
   left: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
   right: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
-  bottom: { style: BorderStyle.DOUBLE, size: 20, color: '000000' },
+  bottom: { style: BorderStyle.SINGLE, size: 14, color: '000000' },
 };
 
 const SOLID_BORDER = {
@@ -166,39 +166,12 @@ function buildAntiGratifikasiParagraphs(): Paragraph[] {
   ];
 }
 
-export async function exportSuratTugasDocx(data: SuratTugasData): Promise<void> {
+export function createKopSuratTable(
+  data: SuratTugasData,
+  logoBytes: Uint8Array | null
+): Table {
   const kop = KOP_VARIAN_OPTIONS[data.kopVarian] ?? KOP_VARIAN_OPTIONS.telepon;
-  const nomorDisplay = data.modeSrikandi
-    ? '${nomor_naskah}'
-    : data.nomorSurat.trim() || '-';
-  const tanggalDisplay = data.modeSrikandi
-    ? '${tanggal_naskah}'
-    : formatTanggalIndo(data.tanggalNaskah);
-
-  const kegiatanPhrase = data.namaKegiatan.trim() || 'kegiatan ...';
-  const menimbangAText =
-    data.gunakanMenimbangCustom && data.menimbangCustom.trim()
-      ? data.menimbangCustom.trim()
-      : `Bahwa dalam rangka menghadiri ${kegiatanPhrase}, maka Aparatur Sipil Negara dibawah ini dipandang mampu melaksanakan tugas pada kegiatan tersebut.`;
-
-  const rentangTanggal = formatRentangTanggal(data.tanggalMulai, data.tanggalSelesai);
-  const rentangHariTanggal = formatRentangHariTanggal(
-    data.tanggalMulai,
-    data.tanggalSelesai
-  );
-
-  // Fetch official Kemenag logo as ArrayBuffer
-  let logoBytes: Uint8Array | null = null;
-  try {
-    const res = await fetch('/assets/kemenag-logo.png');
-    if (res.ok) {
-      logoBytes = new Uint8Array(await res.arrayBuffer());
-    }
-  } catch {
-    logoBytes = null;
-  }
-
-  const kopTable = new Table({
+  return new Table({
     width: { size: 10000, type: WidthType.DXA },
     borders: {
       top: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
@@ -206,14 +179,14 @@ export async function exportSuratTugasDocx(data: SuratTugasData): Promise<void> 
       right: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
       insideHorizontal: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
       insideVertical: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
-      bottom: { style: BorderStyle.DOUBLE, size: 20, color: '000000' },
+      bottom: { style: BorderStyle.SINGLE, size: 14, color: '000000' },
     },
     rows: [
       new TableRow({
         children: [
           new TableCell({
             width: { size: 1500, type: WidthType.DXA },
-            borders: KOP_DOUBLE_BOTTOM_BORDER,
+            borders: KOP_SINGLE_BOTTOM_BORDER,
             verticalAlign: VerticalAlign.CENTER,
             children: [
               new Paragraph({
@@ -232,7 +205,7 @@ export async function exportSuratTugasDocx(data: SuratTugasData): Promise<void> 
           }),
           new TableCell({
             width: { size: 8500, type: WidthType.DXA },
-            borders: KOP_DOUBLE_BOTTOM_BORDER,
+            borders: KOP_SINGLE_BOTTOM_BORDER,
             verticalAlign: VerticalAlign.CENTER,
             children: [
               new Paragraph({
@@ -276,6 +249,42 @@ export async function exportSuratTugasDocx(data: SuratTugasData): Promise<void> 
       }),
     ],
   });
+}
+
+export const createKopSurat = createKopSuratTable;
+
+export async function exportSuratTugasDocx(data: SuratTugasData): Promise<void> {
+  const nomorDisplay = data.modeSrikandi
+    ? '${nomor_naskah}'
+    : data.nomorSurat.trim() || '-';
+  const tanggalDisplay = data.modeSrikandi
+    ? '${tanggal_naskah}'
+    : formatTanggalIndo(data.tanggalNaskah);
+
+  const kegiatanPhrase = data.namaKegiatan.trim() || 'kegiatan ...';
+  const menimbangAText =
+    data.gunakanMenimbangCustom && data.menimbangCustom.trim()
+      ? data.menimbangCustom.trim()
+      : `Bahwa dalam rangka menghadiri ${kegiatanPhrase}, maka Aparatur Sipil Negara dibawah ini dipandang mampu melaksanakan tugas pada kegiatan tersebut.`;
+
+  const rentangTanggal = formatRentangTanggal(data.tanggalMulai, data.tanggalSelesai);
+  const rentangHariTanggal = formatRentangHariTanggal(
+    data.tanggalMulai,
+    data.tanggalSelesai
+  );
+
+  // Fetch official Kemenag logo as ArrayBuffer
+  let logoBytes: Uint8Array | null = null;
+  try {
+    const res = await fetch('/assets/kemenag-logo.png');
+    if (res.ok) {
+      logoBytes = new Uint8Array(await res.arrayBuffer());
+    }
+  } catch {
+    logoBytes = null;
+  }
+
+  const kopTable = createKopSuratTable(data, logoBytes);
 
   // Kepada sub-table
   const isTerlampir = data.kriteria === 'terlampir';

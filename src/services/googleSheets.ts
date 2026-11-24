@@ -1,5 +1,12 @@
-import { ArsipSurat, KriteriaKeberangkatan, SuratTugasData } from '../types/surat';
-import { formatTanggalIndo } from '../utils/dateFormat';
+import {
+  ArsipSurat,
+  KriteriaKeberangkatan,
+  normalizeNip,
+  ScheduleConflict,
+  SpdFormData,
+  SuratTugasData,
+} from '../types/surat';
+import { formatRentangTanggal, formatTanggalIndo } from '../utils/dateFormat';
 import { ADMIN_EMAIL, isAdminEmail } from './googleAuth';
 
 export const OWNER_GOOGLE_EMAIL = ADMIN_EMAIL;
@@ -283,6 +290,142 @@ export function findDuplicateSuratAcrossSources(
   }
 
   return null;
+}
+
+export function findScheduleConflictsAcrossSources(
+  targetSurat: SuratTugasData,
+  sheetRows: TrackedSuratRow[],
+  localArchive: ArsipSurat[],
+  extraMigrasiItems: SuratTugasData[] = []
+): ScheduleConflict[] {
+  const conflicts: ScheduleConflict[] = [];
+  const targetId = (targetSurat.id || '').trim();
+  const targetMulai = (targetSurat.tanggalMulai || '').trim();
+  const targetSelesai = (targetSurat.tanggalSelesai || targetMulai).trim();
+  if (!targetMulai) return [];
+
+  const targetPegawaiNips = new Map<string, string>();
+  const targetPegawaiNames = new Map<string, string>();
+
+  for (const peg of targetSurat.pegawaiList) {
+    const cleanNip = normalizeNip(peg.nip);
+    const cleanName = peg.nama.trim().toLowerCase();
+    if (cleanNip) {
+      targetPegawaiNips.set(cleanNip, peg.nama || peg.nip);
+    } else if (cleanName) {
+      targetPegawaiNames.set(cleanName, peg.nama);
+    }
+  }
+
+  if (targetPegawaiNips.size === 0 && targetPegawaiNames.size === 0) return [];
+
+  const checkRecord = (
+    recId: string,
+    recNomor: string,
+    recKegiatan: string,
+    recMulai: string,
+    recSelesai: string,
+    pegawaiList: Array<{ nama: string; nip: string }>,
+    source: 'sheets' | 'local_tercatat'
+  ) => {
+    if (recId && recId === targetId) return;
+    const existMulai = (recMulai || '').trim();
+    const existSelesai = (recSelesai || existMulai).trim();
+    if (!existMulai) return;
+
+    // Check date interval overlap
+    const overlaps = targetMulai <= existSelesai && targetSelesai >= existMulai;
+    if (!overlaps) return;
+
+    for (const p of pegawaiList) {
+      const cleanNip = normalizeNip(p.nip);
+      const cleanName = p.nama.trim().toLowerCase();
+      let matchedPegName: string | null = null;
+      let matchedNip = p.nip;
+
+      if (cleanNip && targetPegawaiNips.has(cleanNip)) {
+        matchedPegName = targetPegawaiNips.get(cleanNip)!;
+      } else if (cleanName && targetPegawaiNames.has(cleanName)) {
+        matchedPegName = targetPegawaiNames.get(cleanName)!;
+      }
+
+      if (matchedPegName) {
+        const alreadyReported = conflicts.some(
+          (c) =>
+            c.existingIdSurat === recId &&
+            (normalizeNip(c.pegawaiNip) === cleanNip ||
+              c.pegawaiNama.toLowerCase() === matchedPegName!.toLowerCase())
+        );
+        if (!alreadyReported) {
+          conflicts.push({
+            pegawaiNama: matchedPegName,
+            pegawaiNip: matchedNip || cleanNip,
+            existingIdSurat: recId,
+            existingNomorSurat: recNomor || '-',
+            existingKegiatan: recKegiatan || '-',
+            existingTanggalMulai: existMulai,
+            existingTanggalSelesai: existSelesai,
+            overlapDatesDisplay: formatRentangTanggal(existMulai, existSelesai),
+            source,
+          });
+        }
+      }
+    }
+  };
+
+  for (const row of sheetRows) {
+    let pegList: Array<{ nama: string; nip: string }> = [];
+    if (row.rawDraft && Array.isArray(row.rawDraft.pegawaiList)) {
+      pegList = row.rawDraft.pegawaiList;
+    } else if (row.daftarPegawaiRingkas) {
+      const lines = row.daftarPegawaiRingkas.split('\n');
+      for (const line of lines) {
+        const match = line.match(/^\d*\.?\s*(.*?)(?:\s*\(([^)]+)\))?$/);
+        if (match) {
+          pegList.push({
+            nama: match[1]?.trim() || '',
+            nip: match[2]?.trim() || '',
+          });
+        }
+      }
+    }
+    checkRecord(
+      row.idSurat,
+      row.nomorSurat,
+      row.namaKegiatan,
+      row.tanggalMulai,
+      row.tanggalSelesai,
+      pegList,
+      'sheets'
+    );
+  }
+
+  for (const item of localArchive) {
+    if (item.status !== 'Tercatat') continue;
+    checkRecord(
+      item.data.id,
+      item.data.nomorSurat,
+      item.data.namaKegiatan,
+      item.data.tanggalMulai,
+      item.data.tanggalSelesai,
+      item.data.pegawaiList || [],
+      'local_tercatat'
+    );
+  }
+
+  for (const seed of extraMigrasiItems) {
+    checkRecord(
+      seed.id,
+      seed.nomorSurat,
+      seed.namaKegiatan,
+      seed.tanggalMulai,
+      seed.tanggalSelesai,
+      seed.pegawaiList || [],
+      'local_tercatat'
+    );
+  }
+
+  return conflicts;
 }
 
 export async function findOrCreateTrackingSpreadsheet(
@@ -1219,3 +1362,84 @@ export async function upsertSuratViaBridge(
   }
   return data;
 }
+
+export function buildSpdRowValues(
+  spd: SpdFormData,
+  rowNumberDisplay = 1
+): (string | number)[] {
+  const waktuInput = new Date().toLocaleString('id-ID', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
+  const pemimpin = spd.pegawaiList[0] || {
+    nama: '-',
+    nip: '',
+    pangkatGolongan: '',
+    jabatan: '',
+  };
+  const pengikutSummary =
+    spd.pegawaiList
+      .slice(1)
+      .map(
+        (p, i) => `${i + 1}. ${p.nama || '-'}${p.nip ? ` (${p.nip})` : ''}`
+      )
+      .join('\n') || '-';
+
+  return [
+    rowNumberDisplay,
+    spd.nomorSpd || `SPD-${Date.now()}`,
+    waktuInput,
+    spd.nomorSpd || '-',
+    spd.tanggalSpd || '-',
+    spd.ppkNama || '-',
+    pemimpin.nama || '-',
+    pemimpin.nip || '-',
+    pemimpin.pangkatGolongan || '-',
+    pemimpin.jabatan || '-',
+    spd.tingkatBiaya || 'Tingkat C',
+    spd.maksudPerjalanan || '-',
+    spd.alatAngkutan || 'Kendaraan Umum / Darat',
+    `${spd.tempatBerangkat} -> ${spd.kotaTujuan} (${spd.tujuanLengkap})`,
+    `${spd.tanggalBerangkat} s.d. ${spd.tanggalKembali}`,
+    `${spd.lamaHari} Hari`,
+    JSON.stringify(spd),
+  ];
+}
+
+export async function upsertSpdViaBridge(
+  year: string,
+  spd: SpdFormData,
+  customWebhookUrl?: string
+): Promise<BridgeUpsertResponse> {
+  const rowValues = buildSpdRowValues(spd, 1);
+  let res: Response;
+  try {
+    res = await fetch('/api/sheets-tracking', {
+      method: 'POST',
+      headers: buildBridgeHeaders(customWebhookUrl),
+      body: JSON.stringify({
+        action: 'upsert',
+        year,
+        recordType: 'SPD',
+        spdId: spd.nomorSpd || `SPD-${Date.now()}`,
+        rowValues,
+        overwriteConfirmed: true,
+      }),
+    });
+  } catch (err) {
+    throw new Error(
+      err instanceof Error
+        ? `Koneksi ke server Google Sheets terputus (${err.message}).`
+        : 'Tidak dapat terhubung ke jaringan atau jembatan Google Sheets.'
+    );
+  }
+  const data = (await res.json().catch(() => ({}))) as BridgeUpsertResponse;
+  if (!res.ok || data.ok === false) {
+    throw new Error(
+      data?.error ||
+        `Gagal menyimpan data SPD ke Google Sheets (HTTP ${res.status}).`
+    );
+  }
+  return data;
+}
+

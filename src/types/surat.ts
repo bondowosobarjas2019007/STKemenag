@@ -279,4 +279,133 @@ export function createEmptyDraft(
   };
 }
 
+export type SpdFormatMode = 'per_file' | 'gabung';
+
+export interface SpdPpkPreset {
+  id: 'triastono' | 'pitono';
+  nama: string;
+  nip: string;
+  keterangan: string;
+}
+
+export const SPD_PPK_PRESETS: SpdPpkPreset[] = [
+  {
+    id: 'triastono',
+    nama: 'Triastono Rokhman, S.E.',
+    nip: '197505122005011004',
+    keterangan: 'Sekjen, Haji, Peny. Katolik',
+  },
+  {
+    id: 'pitono',
+    nama: 'Pitono, S.Sos.',
+    nip: '196811201994031003',
+    keterangan: 'Pendis, Bimas Islam, Peny. Zawa, Kristen & Buddha',
+  },
+];
+
+export interface SpdFormData {
+  formatMode: SpdFormatMode; // 'per_file' | 'gabung'
+  nomorSpd: string;
+  ppkMode: 'triastono' | 'pitono' | 'manual';
+  ppkNama: string;
+  ppkNip: string;
+  tingkatBiaya: string; // default "Tingkat C"
+  maksudPerjalanan: string;
+  alatAngkutan: string; // default "Kendaraan Umum / Darat"
+  tempatBerangkat: string; // default "JEMBER"
+  kotaTujuan: string; // e.g. "di Probolinggo"
+  tujuanLengkap: string; // e.g. "di Kantor Kementerian Agama Kabupaten Probolinggo"
+  tanggalBerangkat: string; // YYYY-MM-DD
+  tanggalKembali: string; // YYYY-MM-DD
+  lamaHari: number;
+  pembebananAnggaranInstansi: string; // default "a. Kantor Kementerian Agama Kab. Jember"
+  pembebananAnggaranAkun: string; // default "b. "
+  keteranganLain: string; // default "-"
+  tanggalSpd: string; // YYYY-MM-DD
+  tempatDikeluarkan: string; // default "Jember"
+  namaKepalaKantor: string; // default "Dr. SANTOSO, S.Ag, M.Pd."
+  nipKepalaKantor: string;
+  pegawaiList: Pegawai[];
+}
+
+export interface ScheduleConflict {
+  pegawaiNama: string;
+  pegawaiNip: string;
+  existingIdSurat: string;
+  existingNomorSurat: string;
+  existingKegiatan: string;
+  existingTanggalMulai: string;
+  existingTanggalSelesai: string;
+  overlapDatesDisplay: string;
+  source: 'sheets' | 'local_tercatat';
+}
+
+export function normalizeNip(val?: string | null): string {
+  if (!val) return '';
+  return val.replace(/[^0-9]/g, '');
+}
+
+export function extractKotaTujuan(lokasiTujuan: string): string {
+  const clean = (lokasiTujuan || '').trim();
+  if (!clean) return 'di Tempat Tujuan';
+  const cityMatch = clean.match(/(?:Kabupaten|Kab\.|Kota)\s+([A-Za-z\s]+)/i);
+  if (cityMatch?.[1]) {
+    const rawCity = cityMatch[1].trim().split(/\s*,\s*|\s+Provinsi|\s+Jawa/)[0];
+    return `di ${rawCity}`;
+  }
+  return clean.startsWith('di ') ? clean : `di ${clean}`;
+}
+
+export function generateDefaultNomorSpd(dateStr?: string): string {
+  const d = dateStr ? new Date(dateStr) : new Date();
+  const validD = isNaN(d.getTime()) ? new Date() : d;
+  const month = String(validD.getMonth() + 1).padStart(2, '0');
+  const year = String(validD.getFullYear());
+  return `/Kk.13.32.04/SPD/${month}/${year}`;
+}
+
+export function createInitialSpdData(surat: SuratTugasData): SpdFormData {
+  const today = new Date().toISOString().slice(0, 10);
+  const tanggalBerangkat = surat.tanggalMulai || today;
+  const tanggalKembali = surat.tanggalSelesai || tanggalBerangkat;
+
+  const d1 = new Date(tanggalBerangkat).getTime();
+  const d2 = new Date(tanggalKembali).getTime();
+  const diffDays =
+    isNaN(d1) || isNaN(d2)
+      ? 1
+      : Math.max(1, Math.round((d2 - d1) / (1000 * 60 * 60 * 24)) + 1);
+
+  const defaultPpk = SPD_PPK_PRESETS[0];
+
+  return {
+    formatMode: surat.pegawaiList.length > 1 ? 'gabung' : 'per_file',
+    nomorSpd: generateDefaultNomorSpd(surat.tanggalNaskah || tanggalBerangkat),
+    ppkMode: defaultPpk.id,
+    ppkNama: defaultPpk.nama,
+    ppkNip: defaultPpk.nip,
+    tingkatBiaya: 'Tingkat C',
+    maksudPerjalanan: surat.namaKegiatan || '',
+    alatAngkutan: 'Kendaraan Umum / Darat',
+    tempatBerangkat: 'JEMBER',
+    kotaTujuan: extractKotaTujuan(surat.lokasiTujuan),
+    tujuanLengkap: surat.lokasiTujuan.startsWith('di ')
+      ? surat.lokasiTujuan
+      : surat.lokasiTujuan
+        ? `di ${surat.lokasiTujuan}`
+        : 'di Tempat Kegiatan',
+    tanggalBerangkat,
+    tanggalKembali,
+    lamaHari: diffDays,
+    pembebananAnggaranInstansi: 'a. Kantor Kementerian Agama Kab. Jember',
+    pembebananAnggaranAkun: 'b. ',
+    keteranganLain: '-',
+    tanggalSpd: surat.tanggalNaskah || today,
+    tempatDikeluarkan: 'Jember',
+    namaKepalaKantor: 'Dr. SANTOSO, S.Ag, M.Pd.',
+    nipKepalaKantor: '197008101998031002',
+    pegawaiList: surat.pegawaiList.map((p) => ({ ...p })),
+  };
+}
+
 
