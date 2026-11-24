@@ -14,7 +14,7 @@ import {
   WidthType,
 } from 'docx';
 import { Pegawai, SpdFormData } from '../types/surat';
-import { formatTanggalIndo, terbilangHari } from './dateFormat';
+import { computeDaysDifference, formatTanggalIndo, terbilang } from './dateFormat';
 
 const FONT = 'Arial';
 const SIZE_TITLE = 24; // 12pt
@@ -73,7 +73,8 @@ export function buildSingleSpdDocument(
   const tglBerangkatIndo = formatTanggalIndo(spd.tanggalBerangkat);
   const tglKembaliIndo = formatTanggalIndo(spd.tanggalKembali);
   const tglSpdIndo = formatTanggalIndo(spd.tanggalSpd);
-  const lamaHariStr = terbilangHari(spd.lamaHari);
+  const jumlahHari = computeDaysDifference(spd.tanggalBerangkat, spd.tanggalKembali);
+  const lamaPerjalanan = `${jumlahHari} (${terbilang(jumlahHari)}) hari`;
 
   // Table Widths (Total: 10,000 DXA)
   const colNumW = 550;
@@ -294,7 +295,7 @@ export function buildSingleSpdDocument(
             width: { size: colValW, type: WidthType.DXA },
             borders: BORDER_BOX,
             children: [
-              p(`a. ${lamaHariStr}`),
+              p(`a. ${lamaPerjalanan}`),
               p(`b. ${tglBerangkatIndo}`),
               p(`c. ${tglKembaliIndo}`),
             ],

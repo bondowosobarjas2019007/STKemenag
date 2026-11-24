@@ -563,7 +563,12 @@ export const SpdGeneratorModal: React.FC<SpdGeneratorModalProps> = ({
                     Lama Hari (Poin 7a)
                   </label>
                   <div className="px-2 py-1.5 text-xs font-medium st-surface-muted border st-border rounded-lg">
-                    {terbilangHari(formData.lamaHari)}
+                    {terbilangHari(
+                      computeDaysDifference(
+                        formData.tanggalBerangkat,
+                        formData.tanggalKembali
+                      )
+                    )}
                   </div>
                 </div>
               </div>
@@ -794,7 +799,15 @@ export const SpdGeneratorModal: React.FC<SpdGeneratorModalProps> = ({
                                   <div>c. Tanggal harus kembali/tiba di tempat baru *)</div>
                                 </td>
                                 <td className="border border-black px-2.5 py-1 align-top">
-                                  <div>a. {terbilangHari(formData.lamaHari)}</div>
+                                  <div>
+                                    a.{' '}
+                                    {terbilangHari(
+                                      computeDaysDifference(
+                                        formData.tanggalBerangkat,
+                                        formData.tanggalKembali
+                                      )
+                                    )}
+                                  </div>
                                   <div>b. {formatTanggalIndo(formData.tanggalBerangkat)}</div>
                                   <div>c. {formatTanggalIndo(formData.tanggalKembali)}</div>
                                 </td>

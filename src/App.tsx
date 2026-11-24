@@ -193,7 +193,11 @@ function loadPegawaiDirectory(): Pegawai[] {
 }
 
 function clearActiveDraftStorage(): void {
-  const draftKeys = [STORAGE_KEYS.DRAFT, 'stkemenag_current_draft'];
+  const draftKeys = [
+    STORAGE_KEYS.DRAFT,
+    'situgas_kemenag_jember_draft_v1',
+    'stkemenag_current_draft',
+  ];
   for (const key of draftKeys) {
     try {
       localStorage.removeItem(key);
@@ -219,9 +223,10 @@ export default function App() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [pdfUploaderKey, setPdfUploaderKey] = useState<number>(0);
 
-  const [surat, setSurat] = useState<SuratTugasData>(() =>
-    createEmptyDraft('sendiri', { emptyPegawai: true })
-  );
+  const [surat, setSurat] = useState<SuratTugasData>(() => {
+    clearActiveDraftStorage();
+    return createEmptyDraft('sendiri', { emptyPegawai: true });
+  });
   const [directory, setDirectory] = useState<Pegawai[]>(loadPegawaiDirectory);
   const [arsipList, setArsipList] = useState<ArsipSurat[]>(() =>
     loadFromStorage<ArsipSurat[]>(STORAGE_KEYS.ARSIP, [])
@@ -1694,7 +1699,7 @@ export default function App() {
       setDownloadConfirmModal(null);
       resetFormAfterDownload();
       showToast(
-        'File berhasil diunduh, dicatat ke Spreadsheet, dan formulir telah dikosongkan untuk surat berikutnya.'
+        'File berhasil diunduh, dicatat ke Spreadsheet, dan formulir telah dikosongkan.'
       );
     } catch (err) {
       if (err instanceof SheetsAuthError) {

@@ -6,7 +6,12 @@ import {
   SpdFormData,
   SuratTugasData,
 } from '../types/surat';
-import { formatRentangTanggal, formatTanggalIndo } from '../utils/dateFormat';
+import {
+  formatRentangTanggal,
+  formatTanggalIndo,
+  parseDateRange,
+  toIsoDateString,
+} from '../utils/dateFormat';
 import { ADMIN_EMAIL, isAdminEmail } from './googleAuth';
 
 export const OWNER_GOOGLE_EMAIL = ADMIN_EMAIL;
@@ -292,17 +297,19 @@ export function findDuplicateSuratAcrossSources(
   return null;
 }
 
-export function findScheduleConflictsAcrossSources(
+export function checkScheduleConflicts(
   targetSurat: SuratTugasData,
   sheetRows: TrackedSuratRow[],
-  localArchive: ArsipSurat[],
+  localArchive: ArsipSurat[] = [],
   extraMigrasiItems: SuratTugasData[] = []
 ): ScheduleConflict[] {
   const conflicts: ScheduleConflict[] = [];
   const targetId = (targetSurat.id || '').trim();
-  const targetMulai = (targetSurat.tanggalMulai || '').trim();
-  const targetSelesai = (targetSurat.tanggalSelesai || targetMulai).trim();
-  if (!targetMulai) return [];
+  const targetRange = parseDateRange(
+    targetSurat.tanggalMulai,
+    targetSurat.tanggalSelesai
+  );
+  if (!targetRange) return [];
 
   const targetPegawaiNips = new Map<string, string>();
   const targetPegawaiNames = new Map<string, string>();
@@ -312,7 +319,8 @@ export function findScheduleConflictsAcrossSources(
     const cleanName = peg.nama.trim().toLowerCase();
     if (cleanNip) {
       targetPegawaiNips.set(cleanNip, peg.nama || peg.nip);
-    } else if (cleanName) {
+    }
+    if (cleanName) {
       targetPegawaiNames.set(cleanName, peg.nama);
     }
   }
@@ -329,23 +337,31 @@ export function findScheduleConflictsAcrossSources(
     source: 'sheets' | 'local_tercatat'
   ) => {
     if (recId && recId === targetId) return;
-    const existMulai = (recMulai || '').trim();
-    const existSelesai = (recSelesai || existMulai).trim();
-    if (!existMulai) return;
+    const existRange = parseDateRange(recMulai, recSelesai);
+    if (!existRange) return;
 
-    // Check date interval overlap
-    const overlaps = targetMulai <= existSelesai && targetSelesai >= existMulai;
+    // Deteksi irisan (overlap) rentang tanggal berbasis objek Date: startA <= endB && endA >= startB
+    const overlaps =
+      targetRange.start.getTime() <= existRange.end.getTime() &&
+      targetRange.end.getTime() >= existRange.start.getTime();
     if (!overlaps) return;
+
+    const existMulaiIso = toIsoDateString(existRange.start);
+    const existSelesaiIso = toIsoDateString(existRange.end);
+    const overlapDatesDisplay = formatRentangTanggal(
+      existMulaiIso,
+      existSelesaiIso
+    );
 
     for (const p of pegawaiList) {
       const cleanNip = normalizeNip(p.nip);
       const cleanName = p.nama.trim().toLowerCase();
       let matchedPegName: string | null = null;
-      let matchedNip = p.nip;
+      const matchedNip = p.nip;
 
       if (cleanNip && targetPegawaiNips.has(cleanNip)) {
         matchedPegName = targetPegawaiNips.get(cleanNip)!;
-      } else if (cleanName && targetPegawaiNames.has(cleanName)) {
+      } else if (!cleanNip && cleanName && targetPegawaiNames.has(cleanName)) {
         matchedPegName = targetPegawaiNames.get(cleanName)!;
       }
 
@@ -353,7 +369,7 @@ export function findScheduleConflictsAcrossSources(
         const alreadyReported = conflicts.some(
           (c) =>
             c.existingIdSurat === recId &&
-            (normalizeNip(c.pegawaiNip) === cleanNip ||
+            ((cleanNip && normalizeNip(c.pegawaiNip) === cleanNip) ||
               c.pegawaiNama.toLowerCase() === matchedPegName!.toLowerCase())
         );
         if (!alreadyReported) {
@@ -363,9 +379,9 @@ export function findScheduleConflictsAcrossSources(
             existingIdSurat: recId,
             existingNomorSurat: recNomor || '-',
             existingKegiatan: recKegiatan || '-',
-            existingTanggalMulai: existMulai,
-            existingTanggalSelesai: existSelesai,
-            overlapDatesDisplay: formatRentangTanggal(existMulai, existSelesai),
+            existingTanggalMulai: existMulaiIso,
+            existingTanggalSelesai: existSelesaiIso,
+            overlapDatesDisplay,
             source,
           });
         }
@@ -380,17 +396,28 @@ export function findScheduleConflictsAcrossSources(
     } else if (row.daftarPegawaiRingkas) {
       const lines = row.daftarPegawaiRingkas.split('\n');
       for (const line of lines) {
-        const match = line.match(/^\d*\.?\s*(.*?)(?:\s*\(([^)]+)\))?$/);
-        if (match) {
-          pegList.push({
-            nama: match[1]?.trim() || '',
-            nip: match[2]?.trim() || '',
-          });
+        const parenMatch = line.match(/^\d*\.?\s*(.*?)(?:\s*\(([^)]+)\))?$/);
+        if (parenMatch) {
+          let namaPart = parenMatch[1]?.trim() || '';
+          let nipPart = parenMatch[2]?.trim() || '';
+          if (!nipPart) {
+            const trailingNipMatch = namaPart.match(/^(.*?)\s*[-–/]\s*(\d[\d\s-]{8,})$/);
+            if (trailingNipMatch) {
+              namaPart = trailingNipMatch[1].trim();
+              nipPart = trailingNipMatch[2].trim();
+            }
+          }
+          if (namaPart || nipPart) {
+            pegList.push({
+              nama: namaPart,
+              nip: nipPart,
+            });
+          }
         }
       }
     }
     checkRecord(
-      row.idSurat,
+      row.idSurat || `sheet-row-${row.rowNumber}`,
       row.nomorSurat,
       row.namaKegiatan,
       row.tanggalMulai,
@@ -427,6 +454,8 @@ export function findScheduleConflictsAcrossSources(
 
   return conflicts;
 }
+
+export const findScheduleConflictsAcrossSources = checkScheduleConflicts;
 
 export async function findOrCreateTrackingSpreadsheet(
   accessToken: string,
