@@ -718,13 +718,7 @@ export async function exportSuratTugasDocx(data: SuratTugasData): Promise<void> 
   });
 
   const blob = await Packer.toBlob(doc);
-  const firstPerson = (displayedPegawai[0]?.nama || 'Surat_Tugas')
-    .replace(/[^a-zA-Z0-9._\s-]/g, '')
-    .trim()
-    .replace(/\s+/g, '_');
-  const suffix =
-    data.kriteria === 'sendiri' ? '' : '_DKK';
-  const fileName = `ST_${firstPerson}${suffix}.docx`;
+  const fileName = `${buildSuratFileBaseName(data)}.docx`;
 
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -735,3 +729,14 @@ export async function exportSuratTugasDocx(data: SuratTugasData): Promise<void> 
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+export function buildSuratFileBaseName(data: SuratTugasData): string {
+  const firstPerson = (data.pegawaiList[0]?.nama || 'Surat_Tugas')
+    .replace(/[^a-zA-Z0-9._\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '_');
+  const safePerson = firstPerson || 'Surat_Tugas';
+  const suffix = data.kriteria === 'sendiri' ? '' : '_DKK';
+  return `ST_${safePerson}${suffix}`;
+}
+

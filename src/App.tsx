@@ -1,11 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { User } from 'firebase/auth';
 import {
   Check,
   ChevronDown,
   ChevronUp,
   Crown,
-  Download,
   Eye,
   FilePenLine,
   FileSpreadsheet,
@@ -25,16 +24,15 @@ import {
   X,
 } from 'lucide-react';
 import { ArsipManager } from './components/ArsipManager';
-import {
-  ConfirmDocxExportModal,
-  ConfirmSheetsOverwriteModal,
-  DuplicateSuratWarningModal,
-  SheetsAuthPromptModal,
-} from './components/ConfirmSheetsActionModal';
+import { SheetsAuthPromptModal } from './components/ConfirmSheetsActionModal';
 import {
   DasarPdfUploader,
   ParsedDasarPdfResult,
 } from './components/DasarPdfUploader';
+import {
+  DownloadSplitButton,
+  ExportFormat,
+} from './components/DownloadSplitButton';
 import { GoogleSignInButton } from './components/GoogleSignInButton';
 import { PegawaiDirectoryModal } from './components/PegawaiDirectoryModal';
 import { DukImportMode, PegawaiManager } from './components/PegawaiManager';
@@ -58,23 +56,23 @@ import {
 import {
   appendSuratToYearSheet,
   checkExistingRecordRow,
-  DuplicateSuratMatch,
   ensureBridgeYearSheet,
   ensureYearSheet,
   extractSpreadsheetId,
   fetchBridgeYearRows,
   fetchRowsForSheet,
   fetchSheetsBridgeStatus,
-  findDuplicateTrackedRow,
   findOrCreateTrackingSpreadsheet,
   generateSuratFingerprint,
   getSpreadsheetMetadata,
   getTargetYearForSurat,
   isOwnerAccount,
+  MigrasiBatchSyncProgress,
   OWNER_GOOGLE_EMAIL,
   setSpreadsheetViewOnlyAndProtected,
   SheetsAuthError,
   SpreadsheetSummary,
+  syncMigrasiDatasetToSheets,
   TrackedSuratRow,
   updateExistingSuratRow,
   upsertSuratViaBridge,
@@ -93,6 +91,13 @@ import {
   SuratTugasData,
 } from './types/surat';
 import { exportSuratTugasDocx } from './utils/exportDocx';
+import { exportSuratTugasPdf } from './utils/exportPdf';
+import {
+  buildMigrasiArsipEntries,
+  getMigrasiSuratDataset,
+  mergeMigrasiSeedsWithLocalArsip,
+  MIGRASI_STORAGE_FLAGS,
+} from './utils/migrasiSurat';
 
 type AppTab = 'editor' | 'pegawai' | 'sheets' | 'arsip';
 
@@ -105,12 +110,24 @@ const STORAGE_KEYS = {
   BRIDGE_URL: 'situgas_kemenag_jember_bridge_url_v1',
 };
 
+type AutoSyncStatus = 'idle' | 'syncing' | 'synced' | 'error';
+
 function computeSuratSignature(data: SuratTugasData): string {
   return JSON.stringify(data);
 }
 
+function isSuratReadyForAutoSync(data: SuratTugasData): boolean {
+  const hasDasar = Boolean(data.dasarAsal.trim() || data.dasarNomor.trim());
+  const hasPegawai = data.pegawaiList.some(
+    (p) => Boolean(p.nama.trim()) || Boolean(p.nip.trim())
+  );
+  return hasDasar && hasPegawai;
+}
+
 function isSuratReadyForTracking(data: SuratTugasData): boolean {
-  const hasKegiatan = Boolean(data.namaKegiatan.trim() || data.dasarNomor.trim());
+  const hasKegiatan = Boolean(
+    data.namaKegiatan.trim() || data.dasarNomor.trim() || data.dasarAsal.trim()
+  );
   const hasPegawai = data.pegawaiList.some(
     (p) => Boolean(p.nama.trim()) || Boolean(p.nip.trim())
   );
@@ -168,7 +185,9 @@ export default function App() {
   const [mobilePane, setMobilePane] = useState<'form' | 'preview'>('form');
   const [zoom, setZoom] = useState<number>(0.85);
   const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
-  const [isExportingDocx, setIsExportingDocx] = useState<boolean>(false);
+  const [exportingFormat, setExportingFormat] = useState<ExportFormat | null>(
+    null
+  );
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const [surat, setSurat] = useState<SuratTugasData>(() =>
@@ -213,36 +232,29 @@ export default function App() {
   );
   const [sheetRows, setSheetRows] = useState<TrackedSuratRow[]>([]);
   const [authPromptDraft, setAuthPromptDraft] = useState<SuratTugasData | null>(null);
-  const [overwriteConfirm, setOverwriteConfirm] = useState<{
-    spreadsheetId: string;
-    year: string;
-    rowNumber: number;
-    draft: SuratTugasData;
-    viaBridge?: boolean;
-  } | null>(null);
-  const [lastSyncedSignature, setLastSyncedSignature] = useState<string>('');
-  const [pendingOutputAction, setPendingOutputAction] = useState<
-    'print' | 'docx' | null
-  >(null);
-  const [docxConfirmOpen, setDocxConfirmOpen] = useState<boolean>(false);
-  const [isProcessingDocxConfirm, setIsProcessingDocxConfirm] =
-    useState<boolean>(false);
-  const [docxConfirmError, setDocxConfirmError] = useState<string | null>(null);
+  const [autoSyncStatus, setAutoSyncStatus] = useState<AutoSyncStatus>('idle');
+  const [autoSyncError, setAutoSyncError] = useState<string | null>(null);
   const [copiedSourceRef, setCopiedSourceRef] = useState<{
     sourceId: string;
     fingerprint: string;
   } | null>(null);
-  const [duplicateWarning, setDuplicateWarning] = useState<{
-    draft: SuratTugasData;
-    targetYear: string;
-    match: DuplicateSuratMatch;
-    spreadsheetId: string;
-    viaBridge: boolean;
+  const latestSuratRef = useRef<SuratTugasData>(surat);
+  latestSuratRef.current = surat;
+  const initialSigRef = useRef<string>(computeSuratSignature(surat));
+  const lastSyncedSigRef = useRef<string>('');
+  const lastAttemptedSigRef = useRef<string>('');
+  const inFlightPromiseRef = useRef<Promise<boolean> | null>(null);
+  const queuedAutoSyncRef = useRef<{
+    surat: SuratTugasData;
+    silent: boolean;
+    markTercatat: boolean;
   } | null>(null);
-  const [duplicateBusyAction, setDuplicateBusyAction] = useState<
-    'download_only' | 'overwrite' | 'save_new' | null
-  >(null);
-  const [duplicateError, setDuplicateError] = useState<string | null>(null);
+  const debounceSyncTimerRef = useRef<number | null>(null);
+  const [migrasiSyncProgress, setMigrasiSyncProgress] =
+    useState<MigrasiBatchSyncProgress | null>(null);
+  const [isSyncingMigrasi, setIsSyncingMigrasi] = useState<boolean>(false);
+
+  const migrasiSt2026Items = useMemo(() => getMigrasiSuratDataset('ST_2026'), []);
 
   const {
     viewportMode,
@@ -341,6 +353,27 @@ export default function App() {
       // ignore storage quota errors
     }
   }, [arsipList]);
+
+  // One-time auto-seed ST 2026 Excel migration history without overwriting existing manual drafts
+  useEffect(() => {
+    try {
+      const alreadyMigrated = localStorage.getItem(MIGRASI_STORAGE_FLAGS.ST_2026);
+      if (alreadyMigrated === 'true') return;
+
+      const seeds = buildMigrasiArsipEntries('ST_2026');
+      setArsipList((prev) => {
+        const { merged } = mergeMigrasiSeedsWithLocalArsip(
+          prev,
+          seeds,
+          generateSuratFingerprint
+        );
+        return merged;
+      });
+      localStorage.setItem(MIGRASI_STORAGE_FLAGS.ST_2026, 'true');
+    } catch {
+      // ignore storage quota errors
+    }
+  }, []);
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
@@ -449,28 +482,6 @@ export default function App() {
     [persistSpreadsheetId, savedSpreadsheetId]
   );
 
-  const runOutputAction = useCallback(
-    async (action: 'print' | 'docx', targetSurat: SuratTugasData) => {
-      if (action === 'print') {
-        window.setTimeout(() => {
-          window.print();
-        }, 80);
-      } else {
-        setIsExportingDocx(true);
-        try {
-          await exportSuratTugasDocx(targetSurat);
-          showToast('Tercatat di Google Sheets & file Word (.docx) diunduh');
-        } catch (err) {
-          console.error(err);
-          showToast('Gagal mengekspor file Word (.docx)');
-        } finally {
-          setIsExportingDocx(false);
-        }
-      }
-    },
-    [showToast]
-  );
-
   const upsertLocalDraftEntry = useCallback(
     (targetSurat: SuratTugasData, status: 'Draft' | 'Tercatat') => {
       const cloned: SuratTugasData = {
@@ -505,178 +516,307 @@ export default function App() {
     []
   );
 
-  const syncDraftToGoogleSheets = useCallback(
+  const performBackgroundUpsert = useCallback(
     async (
-      draft: SuratTugasData,
-      tokenOverride?: string,
-      afterAction?: 'print' | 'docx' | null,
-      ownerEmailOverride?: string | null
+      targetSurat: SuratTugasData,
+      options?: {
+        silent?: boolean;
+        markTercatat?: boolean;
+        tokenOverride?: string;
+        ownerEmailOverride?: string | null;
+      }
     ): Promise<boolean> => {
-      const token = tokenOverride || getAccessToken();
-      const targetYear = getTargetYearForSurat(draft);
-      const effectiveEmail = ownerEmailOverride ?? googleUser?.email;
+      const silent = options?.silent ?? true;
+      const markTercatat = options?.markTercatat ?? false;
+
+      if (inFlightPromiseRef.current) {
+        if (silent) {
+          const prevQueued = queuedAutoSyncRef.current;
+          queuedAutoSyncRef.current = {
+            surat: targetSurat,
+            silent: prevQueued ? prevQueued.silent && silent : silent,
+            markTercatat: prevQueued
+              ? prevQueued.markTercatat || markTercatat
+              : markTercatat,
+          };
+          return false;
+        }
+        while (inFlightPromiseRef.current) {
+          try {
+            await inFlightPromiseRef.current;
+          } catch {
+            // proceed after previous request settles
+          }
+        }
+      }
+
+      const payloadSurat: SuratTugasData = {
+        ...targetSurat,
+        statusSurat: markTercatat
+          ? 'Tercatat / Final'
+          : targetSurat.statusSurat || 'Draft',
+        pegawaiList: targetSurat.pegawaiList.map((p) => ({ ...p })),
+      };
+      const payloadSig = computeSuratSignature(payloadSurat);
+      const targetYear = getTargetYearForSurat(payloadSurat);
+      const token = options?.tokenOverride || getAccessToken();
+      const effectiveEmail = options?.ownerEmailOverride ?? googleUser?.email;
       const canUseOwnerDirect = Boolean(token) && isOwnerAccount(effectiveEmail);
 
-      // 1. Prefer direct Owner OAuth if logged in as bondowosobarjas2019.007@gmail.com
-      if (canUseOwnerDirect && token) {
-        setIsSyncingSheets(true);
-        setSheetsError(null);
-        try {
-          const summary = await ensureConnectedSpreadsheet(token, targetYear);
-          const { createdNew, summary: ensuredSummary } = await ensureYearSheet(
-            summary.spreadsheetId,
-            targetYear,
-            token
-          );
-          setSpreadsheet(ensuredSummary);
-          setSelectedYear(targetYear);
+      if (!canUseOwnerDirect && !bridgeConnected) {
+        if (silent) {
+          setAutoSyncStatus('idle');
+          return false;
+        }
+        lastAttemptedSigRef.current = payloadSig;
+        setAutoSyncStatus('error');
+        setAutoSyncError(
+          'Jembatan Apps Script belum aktif dan akun Admin Google belum terhubung.'
+        );
+        return false;
+      }
 
-          const { existingRowNumber, nextRowNumberDisplay } =
-            await checkExistingRecordRow(
-              ensuredSummary.spreadsheetId,
+      lastAttemptedSigRef.current = payloadSig;
+      setAutoSyncStatus('syncing');
+      setAutoSyncError(null);
+
+      const executeRun = (async (): Promise<boolean> => {
+        try {
+          let syncedViaOwner = false;
+
+          if (canUseOwnerDirect && token) {
+            try {
+              const summary = await ensureConnectedSpreadsheet(token, targetYear);
+              const { summary: ensuredSummary } = await ensureYearSheet(
+                summary.spreadsheetId,
+                targetYear,
+                token
+              );
+              setSpreadsheet(ensuredSummary);
+
+              const { existingRowNumber, nextRowNumberDisplay } =
+                await checkExistingRecordRow(
+                  ensuredSummary.spreadsheetId,
+                  targetYear,
+                  payloadSurat.id,
+                  token
+                );
+
+              if (existingRowNumber !== null) {
+                await updateExistingSuratRow(
+                  ensuredSummary.spreadsheetId,
+                  targetYear,
+                  existingRowNumber,
+                  payloadSurat,
+                  token
+                );
+              } else {
+                await appendSuratToYearSheet(
+                  ensuredSummary.spreadsheetId,
+                  targetYear,
+                  nextRowNumberDisplay,
+                  payloadSurat,
+                  token
+                );
+              }
+
+              syncedViaOwner = true;
+              if (targetYear === selectedYear) {
+                void fetchRowsForSheet(
+                  ensuredSummary.spreadsheetId,
+                  targetYear,
+                  token
+                )
+                  .then((refreshed) => {
+                    setSheetRows(refreshed);
+                  })
+                  .catch(() => {
+                    // non-blocking refresh
+                  });
+              }
+            } catch (ownerErr) {
+              if (ownerErr instanceof SheetsAuthError) {
+                clearAccessToken();
+                setNeedsAuth(true);
+                if (!bridgeConnected) throw ownerErr;
+              } else if (!bridgeConnected) {
+                throw ownerErr;
+              }
+            }
+          }
+
+          if (!syncedViaOwner) {
+            if (!bridgeConnected) {
+              throw new Error('Koneksi Google Sheets belum tersedia.');
+            }
+            const bridgeRes = await upsertSuratViaBridge(
               targetYear,
-              draft.id,
-              token
+              payloadSurat,
+              true,
+              customBridgeHeader
             );
-
-          if (existingRowNumber !== null) {
-            setPendingOutputAction(afterAction || null);
-            setOverwriteConfirm({
-              spreadsheetId: ensuredSummary.spreadsheetId,
-              year: targetYear,
-              rowNumber: existingRowNumber,
-              draft: {
-                ...draft,
-                pegawaiList: draft.pegawaiList.map((p) => ({ ...p })),
-              },
-              viaBridge: false,
-            });
-            setIsSyncingSheets(false);
-            return false;
+            if (!bridgeRes.ok && bridgeRes.error) {
+              throw new Error(bridgeRes.error);
+            }
+            if (targetYear === selectedYear) {
+              void fetchBridgeYearRows(targetYear, customBridgeHeader)
+                .then((res) => {
+                  setSpreadsheet(res.summary);
+                  setSheetRows(res.rows);
+                })
+                .catch(() => {
+                  // non-blocking refresh
+                });
+            }
           }
 
-          await appendSuratToYearSheet(
-            ensuredSummary.spreadsheetId,
-            targetYear,
-            nextRowNumberDisplay,
-            draft,
-            token
-          );
+          lastSyncedSigRef.current = payloadSig;
+          setSheetsError(null);
 
-          const refreshed = await fetchRowsForSheet(
-            ensuredSummary.spreadsheetId,
-            targetYear,
-            token
-          );
-          setSheetRows(refreshed);
-          setLastSyncedSignature(computeSuratSignature(draft));
-          upsertLocalDraftEntry(draft, 'Tercatat');
-          setPendingOutputAction(null);
-
-          showToast(
-            createdNew
-              ? `Sheet baru "${targetYear}" dibuat & Surat Tugas tersimpan ke Google Sheets`
-              : `Tersimpan ke Google Sheets Pemilik (Sheet ${targetYear})`
-          );
-
-          if (afterAction) {
-            await runOutputAction(afterAction, draft);
+          const currentLatestSig = computeSuratSignature(latestSuratRef.current);
+          if (currentLatestSig === payloadSig) {
+            setAutoSyncStatus('synced');
+          } else {
+            setAutoSyncStatus('idle');
           }
-          return true;
-        } catch (err) {
-          if (err instanceof SheetsAuthError) {
-            clearAccessToken();
-            setNeedsAuth(true);
-            setPendingOutputAction(afterAction || null);
-            setAuthPromptDraft(draft);
-            return false;
-          }
-          const msg =
-            err instanceof Error
-              ? err.message
-              : 'Gagal menyimpan ke Google Sheets.';
-          setSheetsError(msg);
-          showToast(msg);
-          return false;
-        } finally {
-          setIsSyncingSheets(false);
-        }
-      }
-
-      // 2. Centralized Bridge Relay (for other users without Owner Google login)
-      if (bridgeConnected) {
-        setIsSyncingSheets(true);
-        setSheetsError(null);
-        try {
-          const res = await upsertSuratViaBridge(
-            targetYear,
-            draft,
-            false,
-            customBridgeHeader
-          );
-
-          if (res.needsOverwriteConfirm && res.existingRowNumber) {
-            setPendingOutputAction(afterAction || null);
-            setOverwriteConfirm({
-              spreadsheetId: res.spreadsheetId || 'owner-sheet',
-              year: targetYear,
-              rowNumber: res.existingRowNumber,
-              draft: {
-                ...draft,
-                pegawaiList: draft.pegawaiList.map((p) => ({ ...p })),
-              },
-              viaBridge: true,
-            });
-            setIsSyncingSheets(false);
-            return false;
-          }
-
-          setSelectedYear(targetYear);
-          await loadBridgeYearData(targetYear, customBridgeHeader);
-          setLastSyncedSignature(computeSuratSignature(draft));
-          upsertLocalDraftEntry(draft, 'Tercatat');
-          setPendingOutputAction(null);
-
-          showToast(
-            res.createdNew
-              ? `Sheet baru "${targetYear}" dibuat & tersimpan ke Spreadsheet Pemilik`
-              : `Tersimpan ke Spreadsheet Pemilik (Sheet ${targetYear})`
-          );
-
-          if (afterAction) {
-            await runOutputAction(afterAction, draft);
-          }
+          setAutoSyncError(null);
           return true;
         } catch (err) {
           const msg =
             err instanceof Error
               ? err.message
-              : 'Gagal menyimpan ke Spreadsheet Pemilik.';
-          setSheetsError(msg);
-          showToast(msg);
+              : 'Gagal menyinkronkan otomatis ke Google Sheets.';
+          setAutoSyncStatus('error');
+          setAutoSyncError(msg);
+          if (!silent) {
+            setSheetsError(msg);
+          }
           return false;
         } finally {
-          setIsSyncingSheets(false);
+          inFlightPromiseRef.current = null;
+          const queued = queuedAutoSyncRef.current;
+          if (queued) {
+            queuedAutoSyncRef.current = null;
+            void performBackgroundUpsert(queued.surat, {
+              silent: queued.silent,
+              markTercatat: queued.markTercatat,
+            });
+          }
         }
-      }
+      })();
 
-      // 3. Neither Owner OAuth nor Bridge is configured -> block output & prompt
-      setNeedsAuth(true);
-      setPendingOutputAction(afterAction || null);
-      setAuthPromptDraft(draft);
-      return false;
+      inFlightPromiseRef.current = executeRun;
+      return executeRun;
     },
     [
       bridgeConnected,
       customBridgeHeader,
       ensureConnectedSpreadsheet,
       googleUser?.email,
-      loadBridgeYearData,
-      runOutputAction,
-      showToast,
-      upsertLocalDraftEntry,
+      selectedYear,
     ]
   );
+
+  const handleRetryAutoSync = useCallback(() => {
+    const current = latestSuratRef.current;
+    const token = getAccessToken();
+    const canUseOwnerDirect = Boolean(token) && isOwnerAccount(googleUser?.email);
+    if (!bridgeConnected && !canUseOwnerDirect) {
+      setAuthPromptDraft(current);
+      return;
+    }
+    if (!isSuratReadyForAutoSync(current)) {
+      showToast(
+        'Lengkapi minimal Dasar Surat dan 1 Pegawai untuk menyinkronkan ke Google Sheets'
+      );
+      return;
+    }
+    void performBackgroundUpsert(current, {
+      silent: false,
+      markTercatat: current.statusSurat === 'Tercatat / Final',
+    }).then((ok) => {
+      if (ok) {
+        showToast('Surat berhasil disinkronkan ulang ke Google Sheets');
+      }
+    });
+  }, [bridgeConnected, googleUser?.email, performBackgroundUpsert, showToast]);
+
+  // Trigger 2: Silent 3-second debounced auto-save after form edits
+  useEffect(() => {
+    if (debounceSyncTimerRef.current !== null) {
+      window.clearTimeout(debounceSyncTimerRef.current);
+      debounceSyncTimerRef.current = null;
+    }
+
+    if (!isSuratReadyForAutoSync(surat)) {
+      if (autoSyncStatus === 'synced') {
+        setAutoSyncStatus('idle');
+      }
+      return;
+    }
+
+    const token = getAccessToken();
+    const canUseOwnerDirect = Boolean(token) && isOwnerAccount(googleUser?.email);
+    if (!bridgeConnected && !canUseOwnerDirect) {
+      return;
+    }
+
+    const sig = computeSuratSignature(surat);
+    if (
+      sig === initialSigRef.current ||
+      sig === lastSyncedSigRef.current ||
+      sig === lastAttemptedSigRef.current
+    ) {
+      return;
+    }
+
+    const snapshot: SuratTugasData = {
+      ...surat,
+      pegawaiList: surat.pegawaiList.map((p) => ({ ...p })),
+    };
+
+    debounceSyncTimerRef.current = window.setTimeout(() => {
+      debounceSyncTimerRef.current = null;
+      void performBackgroundUpsert(snapshot, {
+        silent: true,
+        markTercatat: snapshot.statusSurat === 'Tercatat / Final',
+      });
+    }, 3000);
+
+    return () => {
+      if (debounceSyncTimerRef.current !== null) {
+        window.clearTimeout(debounceSyncTimerRef.current);
+        debounceSyncTimerRef.current = null;
+      }
+    };
+  }, [
+    autoSyncStatus,
+    bridgeConnected,
+    googleUser?.email,
+    isAdminMode,
+    performBackgroundUpsert,
+    surat,
+  ]);
+
+  // Keep Tracking Sheets table fresh via doGet when operator switches to Tracking Sheets tab
+  useEffect(() => {
+    if (activeTab !== 'sheets') return;
+    const token = getAccessToken();
+    if (isOwner && token && spreadsheet) {
+      void loadYearRows(spreadsheet.spreadsheetId, selectedYear, token);
+    } else if (bridgeConnected) {
+      void loadBridgeYearData(selectedYear, customBridgeHeader);
+    }
+  }, [
+    activeTab,
+    bridgeConnected,
+    customBridgeHeader,
+    isOwner,
+    loadBridgeYearData,
+    loadYearRows,
+    selectedYear,
+    spreadsheet?.spreadsheetId,
+  ]);
 
   useEffect(() => {
     const unsubscribe = initAuth(
@@ -747,15 +887,14 @@ export default function App() {
         showToast(`Selamat datang, Admin (${adminEmail}). Akses penuh aktif.`);
 
         const draftToSync = authPromptDraft;
-        const queuedAction = pendingOutputAction;
         setAuthPromptDraft(null);
         if (draftToSync) {
-          await syncDraftToGoogleSheets(
-            draftToSync,
-            res.accessToken,
-            queuedAction,
-            res.user.email
-          );
+          await performBackgroundUpsert(draftToSync, {
+            silent: false,
+            markTercatat: draftToSync.statusSurat === 'Tercatat / Final',
+            tokenOverride: res.accessToken,
+            ownerEmailOverride: res.user.email,
+          });
         } else {
           const currentYear = String(new Date().getFullYear());
           const summary = await ensureConnectedSpreadsheet(
@@ -934,6 +1073,71 @@ export default function App() {
     showToast('URL Bridge lokal dihapus');
   };
 
+  const handleBatchSyncMigrasiSt2026 = async () => {
+    if (isSyncingMigrasi) return;
+    const token = getAccessToken();
+    if (!token || !isOwner) {
+      setNeedsAuth(true);
+      setMigrasiSyncProgress({
+        phase: 'error',
+        currentBatch: 0,
+        totalBatches: 0,
+        processed: 0,
+        totalPending: 0,
+        inserted: 0,
+        skipped: 0,
+        totalSource: migrasiSt2026Items.length,
+        message: 'Masuk sebagai Admin Google terlebih dahulu untuk menyinkronkan data awal ST 2026.',
+      });
+      return;
+    }
+
+    setIsSyncingMigrasi(true);
+    setSheetsError(null);
+    try {
+      const summary = await ensureConnectedSpreadsheet(token, '2026');
+      const result = await syncMigrasiDatasetToSheets({
+        spreadsheetId: summary.spreadsheetId,
+        year: '2026',
+        items: migrasiSt2026Items,
+        accessToken: token,
+        batchSize: 25,
+        onProgress: setMigrasiSyncProgress,
+      });
+
+      setSpreadsheet(result.summary);
+      setSelectedYear('2026');
+      await loadYearRows(result.summary.spreadsheetId, '2026', token);
+      showToast(
+        `${result.inserted} data awal ST 2026 disinkronkan ke Sheet 2026 (${result.skipped} dilewati)`
+      );
+    } catch (err) {
+      if (err instanceof SheetsAuthError) {
+        clearAccessToken();
+        setNeedsAuth(true);
+      }
+      const msg =
+        err instanceof Error
+          ? err.message
+          : 'Gagal menyinkronkan data awal ST 2026 ke Google Sheets.';
+      setMigrasiSyncProgress({
+        phase: 'error',
+        currentBatch: 0,
+        totalBatches: 0,
+        processed: 0,
+        totalPending: 0,
+        inserted: 0,
+        skipped: 0,
+        totalSource: migrasiSt2026Items.length,
+        message: msg,
+      });
+      setSheetsError(msg);
+      showToast(msg);
+    } finally {
+      setIsSyncingMigrasi(false);
+    }
+  };
+
   const handleCreateYearSheetManual = async (year: string) => {
     const token = getAccessToken();
     if (isOwner && token && spreadsheet) {
@@ -996,90 +1200,6 @@ export default function App() {
     setNeedsAuth(true);
   };
 
-  const handleConfirmOverwriteRow = async () => {
-    if (!overwriteConfirm) return;
-    const queuedAction = pendingOutputAction;
-
-    if (overwriteConfirm.viaBridge) {
-      setIsSyncingSheets(true);
-      setSheetsError(null);
-      try {
-        await upsertSuratViaBridge(
-          overwriteConfirm.year,
-          overwriteConfirm.draft,
-          true,
-          customBridgeHeader
-        );
-        await loadBridgeYearData(overwriteConfirm.year, customBridgeHeader);
-        setLastSyncedSignature(computeSuratSignature(overwriteConfirm.draft));
-        upsertLocalDraftEntry(overwriteConfirm.draft, 'Tercatat');
-        const savedDraft = overwriteConfirm.draft;
-        showToast(
-          `Baris ${overwriteConfirm.rowNumber} di Sheet ${overwriteConfirm.year} diperbarui`
-        );
-        setOverwriteConfirm(null);
-        setPendingOutputAction(null);
-        if (queuedAction) {
-          await runOutputAction(queuedAction, savedDraft);
-        }
-      } catch (err) {
-        setSheetsError(
-          err instanceof Error
-            ? err.message
-            : 'Gagal memperbarui baris melalui Jembatan Sheets.'
-        );
-      } finally {
-        setIsSyncingSheets(false);
-      }
-      return;
-    }
-
-    const token = getAccessToken();
-    if (!token || !isOwner) {
-      setNeedsAuth(true);
-      setOverwriteConfirm(null);
-      return;
-    }
-    setIsSyncingSheets(true);
-    setSheetsError(null);
-    try {
-      await updateExistingSuratRow(
-        overwriteConfirm.spreadsheetId,
-        overwriteConfirm.year,
-        overwriteConfirm.rowNumber,
-        overwriteConfirm.draft,
-        token
-      );
-      const refreshed = await fetchRowsForSheet(
-        overwriteConfirm.spreadsheetId,
-        overwriteConfirm.year,
-        token
-      );
-      setSheetRows(refreshed);
-      setLastSyncedSignature(computeSuratSignature(overwriteConfirm.draft));
-      upsertLocalDraftEntry(overwriteConfirm.draft, 'Tercatat');
-      const savedDraft = overwriteConfirm.draft;
-      showToast(
-        `Baris ${overwriteConfirm.rowNumber} di Sheet ${overwriteConfirm.year} diperbarui`
-      );
-      setOverwriteConfirm(null);
-      setPendingOutputAction(null);
-      if (queuedAction) {
-        await runOutputAction(queuedAction, savedDraft);
-      }
-    } catch (err) {
-      if (err instanceof SheetsAuthError) {
-        clearAccessToken();
-        setNeedsAuth(true);
-      }
-      setSheetsError(
-        err instanceof Error ? err.message : 'Gagal memperbarui baris di Sheets.'
-      );
-    } finally {
-      setIsSyncingSheets(false);
-    }
-  };
-
   const handleKriteriaChange = (nextKriteria: KriteriaKeberangkatan) => {
     setSurat((prev) => {
       let nextList = [...prev.pegawaiList];
@@ -1125,8 +1245,8 @@ export default function App() {
     const today = new Date().toISOString().slice(0, 10);
     const defaultCount =
       surat.kriteria === 'sendiri' ? 1 : surat.kriteria === 'tiga_orang' ? 2 : 4;
-    setSurat((prev) => ({
-      ...prev,
+    const blankDraft: SuratTugasData = {
+      ...surat,
       id: `draft-${Date.now()}`,
       dasarAsal: '',
       dasarNomor: '',
@@ -1137,10 +1257,17 @@ export default function App() {
       lokasiTujuan: '',
       tanggalMulai: today,
       tanggalSelesai: today,
+      statusSurat: 'Draft',
       pegawaiList: Array.from({ length: defaultCount }, (_, i) =>
         createEmptyPegawai(`-${i}`)
       ),
-    }));
+    };
+    initialSigRef.current = computeSuratSignature(blankDraft);
+    lastSyncedSigRef.current = '';
+    lastAttemptedSigRef.current = '';
+    setAutoSyncStatus('idle');
+    setAutoSyncError(null);
+    setSurat(blankDraft);
     showToast('Formulir dikosongkan');
   };
 
@@ -1253,362 +1380,93 @@ export default function App() {
     showToast('Surat berhasil disimpan ke Draft');
   };
 
-  const handlePrintPdf = async () => {
+  const handlePrintPdf = () => {
     if (!isSuratReadyForTracking(surat)) {
       showToast(
         'Lengkapi isi Surat Tugas (kegiatan/dasar & pegawai) terlebih dahulu sebelum mencetak'
       );
       return;
     }
-    if (lastSyncedSignature === computeSuratSignature(surat)) {
-      window.print();
-      return;
+    const finalSurat: SuratTugasData = {
+      ...surat,
+      statusSurat: 'Tercatat / Final',
+      pegawaiList: surat.pegawaiList.map((p) => ({ ...p })),
+    };
+    const finalSig = computeSuratSignature(finalSurat);
+    if (lastSyncedSigRef.current !== finalSig) {
+      setSurat(finalSurat);
+      initialSigRef.current = finalSig;
+      upsertLocalDraftEntry(finalSurat, 'Tercatat');
+      void performBackgroundUpsert(finalSurat, {
+        silent: true,
+        markTercatat: true,
+      });
     }
-    await syncDraftToGoogleSheets(surat, undefined, 'print');
+    window.print();
   };
 
-  const handleExportDocx = () => {
+  // Trigger 1: Export .docx or .pdf immediately + silent concurrent upsert to Google Sheets
+  const handleExportSurat = async (format: ExportFormat) => {
+    if (exportingFormat !== null) return;
     if (!isSuratReadyForTracking(surat)) {
       showToast(
         'Lengkapi isi Surat Tugas (kegiatan/dasar & pegawai) terlebih dahulu sebelum mengunduh'
       );
       return;
     }
-    setDocxConfirmError(null);
-    setDocxConfirmOpen(true);
-  };
 
-  const handleConfirmRecordAndDownloadDocx = async () => {
-    if (isProcessingDocxConfirm) return;
-    setIsProcessingDocxConfirm(true);
-    setDocxConfirmError(null);
+    if (debounceSyncTimerRef.current !== null) {
+      window.clearTimeout(debounceSyncTimerRef.current);
+      debounceSyncTimerRef.current = null;
+    }
 
     const finalSurat: SuratTugasData = {
       ...surat,
       statusSurat: 'Tercatat / Final',
       pegawaiList: surat.pegawaiList.map((p) => ({ ...p })),
     };
-    const targetYear = getTargetYearForSurat(finalSurat);
-    const token = getAccessToken();
-    const canUseOwnerDirect = Boolean(token) && isOwnerAccount(googleUser?.email);
 
+    setCopiedSourceRef(null);
+    setSurat(finalSurat);
+    initialSigRef.current = computeSuratSignature(finalSurat);
+    upsertLocalDraftEntry(finalSurat, 'Tercatat');
+
+    setExportingFormat(format);
     try {
-      // Langkah A: Cek data existing di tab tahun berjalan untuk pencegahan duplikasi
-      if (bridgeConnected) {
-        const bridgeRes = await fetchBridgeYearRows(targetYear, customBridgeHeader);
-        setSpreadsheet(bridgeRes.summary);
-        setSelectedYear(targetYear);
-        setSheetRows(bridgeRes.rows);
+      const exportPromise =
+        format === 'docx'
+          ? exportSuratTugasDocx(finalSurat)
+          : exportSuratTugasPdf(finalSurat);
 
-        const match = findDuplicateTrackedRow(finalSurat, bridgeRes.rows);
-        if (match) {
-          setDocxConfirmOpen(false);
-          setDocxConfirmError(null);
-          setDuplicateError(null);
-          setDuplicateWarning({
-            draft: finalSurat,
-            targetYear,
-            match,
-            spreadsheetId: bridgeRes.summary.spreadsheetId,
-            viaBridge: true,
-          });
-          return;
-        }
+      const [, syncOk] = await Promise.all([
+        exportPromise,
+        performBackgroundUpsert(finalSurat, {
+          silent: false,
+          markTercatat: true,
+        }),
+      ]);
 
-        await upsertSuratViaBridge(
-          targetYear,
-          finalSurat,
-          false,
-          customBridgeHeader
+      const extLabel = format === 'docx' ? '.docx' : '.pdf';
+      if (syncOk) {
+        showToast(
+          `File ${extLabel} diunduh & otomatis tercatat ke Google Sheets`
         );
-        void loadBridgeYearData(targetYear, customBridgeHeader);
-      } else if (canUseOwnerDirect && token) {
-        const summary = await ensureConnectedSpreadsheet(token, targetYear);
-        const { summary: ensuredSummary } = await ensureYearSheet(
-          summary.spreadsheetId,
-          targetYear,
-          token
-        );
-        setSpreadsheet(ensuredSummary);
-        setSelectedYear(targetYear);
-
-        const existingRows = await fetchRowsForSheet(
-          ensuredSummary.spreadsheetId,
-          targetYear,
-          token
-        );
-        setSheetRows(existingRows);
-
-        const match = findDuplicateTrackedRow(finalSurat, existingRows);
-        if (match) {
-          setDocxConfirmOpen(false);
-          setDocxConfirmError(null);
-          setDuplicateError(null);
-          setDuplicateWarning({
-            draft: finalSurat,
-            targetYear,
-            match,
-            spreadsheetId: ensuredSummary.spreadsheetId,
-            viaBridge: false,
-          });
-          return;
-        }
-
-        const { nextRowNumberDisplay } = await checkExistingRecordRow(
-          ensuredSummary.spreadsheetId,
-          targetYear,
-          finalSurat.id,
-          token
-        );
-
-        await appendSuratToYearSheet(
-          ensuredSummary.spreadsheetId,
-          targetYear,
-          nextRowNumberDisplay,
-          finalSurat,
-          token
-        );
-
-        const refreshed = await fetchRowsForSheet(
-          ensuredSummary.spreadsheetId,
-          targetYear,
-          token
-        );
-        setSheetRows(refreshed);
       } else {
-        throw new Error(
-          'Jembatan Apps Script (APPS_SCRIPT_WEBHOOK_URL) belum aktif dan akun Google Pemilik belum terhubung.'
+        showToast(
+          `File ${extLabel} diunduh (sinkronisasi Google Sheets tertunda — klik status di header untuk ulang)`
         );
       }
-
-      // Perbarui status lokal & form aktif menjadi Tercatat
-      setCopiedSourceRef(null);
-      setSurat(finalSurat);
-      setLastSyncedSignature(computeSuratSignature(finalSurat));
-      upsertLocalDraftEntry(finalSurat, 'Tercatat');
-
-      // Langkah B: Unduh file .docx segera setelah pencatatan Google Sheets berhasil
-      setIsExportingDocx(true);
-      try {
-        await exportSuratTugasDocx(finalSurat);
-      } finally {
-        setIsExportingDocx(false);
-      }
-
-      setDocxConfirmOpen(false);
-      setDocxConfirmError(null);
-      showToast('Surat berhasil dicatat di Worksheet dan file .docx diunduh');
     } catch (err) {
-      if (err instanceof SheetsAuthError) {
-        clearAccessToken();
-        setNeedsAuth(true);
-      }
-      const msg =
-        err instanceof Error
-          ? err.message
-          : 'Gagal mencatat data ke Google Sheets. Periksa koneksi internet atau konfigurasi Apps Script.';
-      setDocxConfirmError(msg);
-    } finally {
-      setIsProcessingDocxConfirm(false);
-    }
-  };
-
-  const handleForceDownloadDocxOnly = async () => {
-    if (isProcessingDocxConfirm) return;
-    setIsProcessingDocxConfirm(true);
-    setIsExportingDocx(true);
-    try {
-      await exportSuratTugasDocx(surat);
-      setDocxConfirmOpen(false);
-      setDocxConfirmError(null);
-      showToast('File .docx diunduh (belum tercatat di Worksheet Google Sheets)');
-    } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : 'Gagal mengekspor file .docx.';
-      setDocxConfirmError(msg);
-    } finally {
-      setIsExportingDocx(false);
-      setIsProcessingDocxConfirm(false);
-    }
-  };
-
-  const handleDuplicateDownloadOnly = async () => {
-    if (!duplicateWarning || duplicateBusyAction) return;
-    setDuplicateBusyAction('download_only');
-    setDuplicateError(null);
-    setIsExportingDocx(true);
-    try {
-      await exportSuratTugasDocx(duplicateWarning.draft);
-      setDuplicateWarning(null);
-      showToast('File .docx diunduh (tanpa mencatat ulang ke Google Sheets)');
-    } catch (err) {
-      setDuplicateError(
-        err instanceof Error ? err.message : 'Gagal mengekspor file .docx.'
-      );
-    } finally {
-      setIsExportingDocx(false);
-      setDuplicateBusyAction(null);
-    }
-  };
-
-  const handleDuplicateOverwriteOld = async () => {
-    if (!duplicateWarning || duplicateBusyAction) return;
-    const { draft, targetYear, match, spreadsheetId, viaBridge } =
-      duplicateWarning;
-    setDuplicateBusyAction('overwrite');
-    setDuplicateError(null);
-
-    const updatedDraft: SuratTugasData = {
-      ...draft,
-      id: match.row.idSurat.trim() || draft.id,
-      statusSurat: 'Tercatat / Final',
-      pegawaiList: draft.pegawaiList.map((p) => ({ ...p })),
-    };
-
-    try {
-      if (viaBridge) {
-        await upsertSuratViaBridge(
-          targetYear,
-          updatedDraft,
-          true,
-          customBridgeHeader
-        );
-        await loadBridgeYearData(targetYear, customBridgeHeader);
-      } else {
-        const token = getAccessToken();
-        if (!token || !isOwnerAccount(googleUser?.email)) {
-          clearAccessToken();
-          setNeedsAuth(true);
-          throw new Error(
-            'Sesi admin Google berakhir. Silakan masuk ulang untuk menimpa baris.'
-          );
-        }
-        await updateExistingSuratRow(
-          spreadsheetId,
-          targetYear,
-          match.row.rowNumber,
-          updatedDraft,
-          token
-        );
-        const refreshed = await fetchRowsForSheet(
-          spreadsheetId,
-          targetYear,
-          token
-        );
-        setSheetRows(refreshed);
-      }
-
-      setCopiedSourceRef(null);
-      setSurat(updatedDraft);
-      setLastSyncedSignature(computeSuratSignature(updatedDraft));
-      upsertLocalDraftEntry(updatedDraft, 'Tercatat');
-
-      setIsExportingDocx(true);
-      try {
-        await exportSuratTugasDocx(updatedDraft);
-      } finally {
-        setIsExportingDocx(false);
-      }
-
-      setDuplicateWarning(null);
+      console.error(err);
       showToast(
-        `Baris ${match.row.rowNumber} (Sheet ${targetYear}) diperbarui & .docx diunduh`
-      );
-    } catch (err) {
-      if (err instanceof SheetsAuthError) {
-        clearAccessToken();
-        setNeedsAuth(true);
-      }
-      setDuplicateError(
         err instanceof Error
           ? err.message
-          : 'Gagal memperbarui data lama di Google Sheets.'
+          : format === 'docx'
+            ? 'Gagal mengekspor file Word (.docx)'
+            : 'Gagal mengekspor file PDF (.pdf)'
       );
     } finally {
-      setDuplicateBusyAction(null);
-    }
-  };
-
-  const handleDuplicateSaveAsNew = async () => {
-    if (!duplicateWarning || duplicateBusyAction) return;
-    const { draft, targetYear, spreadsheetId, viaBridge } = duplicateWarning;
-    setDuplicateBusyAction('save_new');
-    setDuplicateError(null);
-
-    const newDraft: SuratTugasData = {
-      ...draft,
-      id: `draft-${Date.now()}`,
-      statusSurat: 'Tercatat / Final',
-      pegawaiList: draft.pegawaiList.map((p) => ({ ...p })),
-    };
-
-    try {
-      if (viaBridge) {
-        await upsertSuratViaBridge(
-          targetYear,
-          newDraft,
-          false,
-          customBridgeHeader
-        );
-        await loadBridgeYearData(targetYear, customBridgeHeader);
-      } else {
-        const token = getAccessToken();
-        if (!token || !isOwnerAccount(googleUser?.email)) {
-          clearAccessToken();
-          setNeedsAuth(true);
-          throw new Error(
-            'Sesi admin Google berakhir. Silakan masuk ulang untuk menyimpan data baru.'
-          );
-        }
-        const { nextRowNumberDisplay } = await checkExistingRecordRow(
-          spreadsheetId,
-          targetYear,
-          newDraft.id,
-          token
-        );
-        await appendSuratToYearSheet(
-          spreadsheetId,
-          targetYear,
-          nextRowNumberDisplay,
-          newDraft,
-          token
-        );
-        const refreshed = await fetchRowsForSheet(
-          spreadsheetId,
-          targetYear,
-          token
-        );
-        setSheetRows(refreshed);
-      }
-
-      setCopiedSourceRef(null);
-      setSurat(newDraft);
-      setLastSyncedSignature(computeSuratSignature(newDraft));
-      upsertLocalDraftEntry(newDraft, 'Tercatat');
-
-      setIsExportingDocx(true);
-      try {
-        await exportSuratTugasDocx(newDraft);
-      } finally {
-        setIsExportingDocx(false);
-      }
-
-      setDuplicateWarning(null);
-      showToast(
-        `Surat dicatat sebagai data baru di Sheet ${targetYear} & .docx diunduh`
-      );
-    } catch (err) {
-      if (err instanceof SheetsAuthError) {
-        clearAccessToken();
-        setNeedsAuth(true);
-      }
-      setDuplicateError(
-        err instanceof Error
-          ? err.message
-          : 'Gagal menyimpan surat sebagai data baru ke Google Sheets.'
-      );
-    } finally {
-      setDuplicateBusyAction(null);
+      setExportingFormat(null);
     }
   };
 
@@ -1727,6 +1585,97 @@ export default function App() {
   const minPegawaiAllowed =
     surat.kriteria === 'sendiri' ? 1 : surat.kriteria === 'tiga_orang' ? 2 : 4;
 
+  const renderSyncStatusPill = () => {
+    const token = getAccessToken();
+    const canUseOwnerDirect = Boolean(token) && isOwnerAccount(googleUser?.email);
+    const hasSheetsTransport = bridgeConnected || canUseOwnerDirect;
+    const currentSig = computeSuratSignature(surat);
+    const hasPendingDebounce =
+      hasSheetsTransport &&
+      isSuratReadyForAutoSync(surat) &&
+      currentSig !== initialSigRef.current &&
+      currentSig !== lastSyncedSigRef.current &&
+      currentSig !== lastAttemptedSigRef.current;
+
+    if (autoSyncStatus === 'syncing') {
+      return (
+        <span
+          role="status"
+          aria-live="polite"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-full border bg-amber-50 night:bg-amber-100/80 dark:bg-amber-950/50 text-amber-800 night:text-[#5c4314] dark:text-amber-300 border-amber-200 dark:border-amber-800 whitespace-nowrap shrink-0"
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
+          Menyimpan...
+        </span>
+      );
+    }
+
+    if (autoSyncStatus === 'error') {
+      return (
+        <button
+          type="button"
+          onClick={handleRetryAutoSync}
+          title={autoSyncError || 'Sinkronisasi ke Google Sheets gagal — klik untuk mencoba ulang'}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold rounded-full border bg-red-50 night:bg-red-100/80 dark:bg-red-950/50 text-red-700 night:text-red-900 dark:text-red-300 border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-950/80 transition-colors whitespace-nowrap shrink-0"
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+          Gagal Sync — Klik untuk Ulang
+        </button>
+      );
+    }
+
+    if (autoSyncStatus === 'synced') {
+      return (
+        <span
+          role="status"
+          aria-live="polite"
+          title={`Tersinkron otomatis ke Google Sheets (Sheet ${getTargetYearForSurat(surat)})`}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-full border bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 text-[#0B5D3B] dark:text-emerald-300 border-emerald-200 night:border-emerald-700/35 dark:border-emerald-800 whitespace-nowrap shrink-0"
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+          Tersinkron ke Sheets
+        </span>
+      );
+    }
+
+    if (!hasSheetsTransport) {
+      return (
+        <button
+          type="button"
+          onClick={() => setActiveTab('sheets')}
+          title="Hubungkan Jembatan Apps Script atau login Admin untuk mengaktifkan auto-sync"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-full border st-surface-muted st-text-secondary hover:opacity-90 transition-colors whitespace-nowrap shrink-0"
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
+          Mode Lokal
+        </button>
+      );
+    }
+
+    if (hasPendingDebounce) {
+      return (
+        <span
+          role="status"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-full border st-surface-muted st-text-secondary whitespace-nowrap shrink-0"
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+          Menyimpan...
+        </span>
+      );
+    }
+
+    return (
+      <span
+        role="status"
+        title={`Auto-sync Google Sheets aktif (Sheet ${getTargetYearForSurat(surat)})`}
+        className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-full border st-surface-muted st-text-secondary whitespace-nowrap shrink-0"
+      >
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/70 shrink-0" />
+        Siap Auto-Sync
+      </span>
+    );
+  };
+
   return (
     <div
       className={
@@ -1744,157 +1693,166 @@ export default function App() {
       >
         {isMobileLayout ? (
           <>
-            <header className="no-print sticky top-0 z-30 st-surface border-b px-2.5 py-1.5 flex items-center justify-between gap-1.5">
-              <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                <button
-                  type="button"
-                  onClick={() => setMobileMenuOpen((open) => !open)}
-                  aria-label={mobileMenuOpen ? 'Tutup menu navigasi' : 'Buka menu navigasi'}
-                  aria-expanded={mobileMenuOpen}
-                  className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center rounded-lg border st-surface-muted st-text-primary hover:opacity-90 shrink-0"
-                >
-                  {mobileMenuOpen ? (
-                    <X className="w-5 h-5" />
-                  ) : (
-                    <Menu className="w-5 h-5" />
-                  )}
-                </button>
-                <a
-                  href="#editor"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setActiveTab('editor');
-                    setMobileMenuOpen(false);
-                  }}
-                  className="font-display text-sm font-bold tracking-tight st-text-primary truncate min-w-0"
-                >
-                  SiTugas Kemenag
-                </a>
-              </div>
-
-              <div className="flex items-center gap-1 shrink-0">
-                <ThemeSwitcher themeMode={themeMode} onChange={setThemeMode} />
-
-                <button
-                  type="button"
-                  onClick={toggleMobileDesktop}
-                  title="Beralih ke Desktop View"
-                  aria-label="Beralih ke Desktop View"
-                  className="min-h-[38px] inline-flex items-center gap-1 px-2 py-1.5 text-[11px] font-semibold rounded-lg border st-surface-muted st-text-primary hover:opacity-90 whitespace-nowrap shrink-0"
-                >
-                  <Monitor className="w-3.5 h-3.5 text-[#0B5D3B] dark:text-emerald-400 shrink-0" />
-                  <span className={isForcedMobile ? 'inline' : 'hidden min-[410px]:inline'}>
-                    Desktop View
-                  </span>
-                </button>
-
-                <div className="relative" ref={roleMenuRef}>
+            <header className="no-print sticky top-0 z-30 st-surface border-b">
+              <div className="px-2.5 py-1.5 flex items-center justify-between gap-1.5">
+                <div className="flex items-center gap-1.5 min-w-0 flex-1">
                   <button
                     type="button"
-                    onClick={() => setRoleMenuOpen((open) => !open)}
-                    aria-expanded={roleMenuOpen}
-                    aria-haspopup="dialog"
-                    aria-label={isAdminMode ? 'Mode: Admin' : 'Mode: Operator'}
-                    title={
-                      isAdminMode
-                        ? `Mode: Admin (${googleUser?.email || OWNER_GOOGLE_EMAIL}) — Akses penuh aktif`
-                        : 'Mode: Operator — Siap membuat & mencatat Surat Tugas'
-                    }
-                    className={`min-h-[38px] inline-flex items-center gap-1 px-2 py-1.5 text-[11px] rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
-                      isAdminMode
-                        ? 'bg-amber-50 night:bg-amber-200/60 dark:bg-amber-950/60 text-amber-900 night:text-[#4e340b] dark:text-amber-300 border-amber-300 dark:border-amber-700 font-semibold'
-                        : 'bg-sky-50 night:bg-emerald-900/15 dark:bg-sky-950/50 text-sky-800 night:text-[#0B5D3B] dark:text-sky-300 border-sky-200 night:border-emerald-700/35 dark:border-sky-800 font-medium'
-                    }`}
+                    onClick={() => setMobileMenuOpen((open) => !open)}
+                    aria-label={mobileMenuOpen ? 'Tutup menu navigasi' : 'Buka menu navigasi'}
+                    aria-expanded={mobileMenuOpen}
+                    className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center rounded-lg border st-surface-muted st-text-primary hover:opacity-90 shrink-0"
                   >
-                    {isAdminMode ? (
-                      <Crown className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                    {mobileMenuOpen ? (
+                      <X className="w-5 h-5" />
                     ) : (
-                      <UserIcon className="w-3.5 h-3.5 shrink-0" />
+                      <Menu className="w-5 h-5" />
                     )}
-                    <span className="hidden min-[380px]:inline">
-                      {isAdminMode ? 'Admin' : 'Operator'}
+                  </button>
+                  <a
+                    href="#editor"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setActiveTab('editor');
+                      setMobileMenuOpen(false);
+                    }}
+                    className="font-display text-sm font-bold tracking-tight st-text-primary truncate min-w-0"
+                  >
+                    SiTugas Kemenag
+                  </a>
+                </div>
+
+                <div className="flex items-center gap-1 shrink-0">
+                  <ThemeSwitcher themeMode={themeMode} onChange={setThemeMode} />
+
+                  <button
+                    type="button"
+                    onClick={toggleMobileDesktop}
+                    title="Beralih ke Desktop View"
+                    aria-label="Beralih ke Desktop View"
+                    className="min-h-[38px] inline-flex items-center gap-1 px-2 py-1.5 text-[11px] font-semibold rounded-lg border st-surface-muted st-text-primary hover:opacity-90 whitespace-nowrap shrink-0"
+                  >
+                    <Monitor className="w-3.5 h-3.5 text-[#0B5D3B] dark:text-emerald-400 shrink-0" />
+                    <span className={isForcedMobile ? 'inline' : 'hidden min-[410px]:inline'}>
+                      Desktop View
                     </span>
                   </button>
 
-                  {roleMenuOpen && (
-                    <div
-                      role="dialog"
-                      aria-label="Status peran pengguna"
-                      className="absolute right-0 mt-2 w-72 max-w-[calc(100vw-1.5rem)] st-surface border rounded-xl shadow-xl p-3.5 z-50 space-y-3"
+                  <div className="relative" ref={roleMenuRef}>
+                    <button
+                      type="button"
+                      onClick={() => setRoleMenuOpen((open) => !open)}
+                      aria-expanded={roleMenuOpen}
+                      aria-haspopup="dialog"
+                      aria-label={isAdminMode ? 'Mode: Admin' : 'Mode: Operator'}
+                      title={
+                        isAdminMode
+                          ? `Mode: Admin (${googleUser?.email || OWNER_GOOGLE_EMAIL}) — Akses penuh aktif`
+                          : 'Mode: Operator — Siap membuat & mencatat Surat Tugas'
+                      }
+                      className={`min-h-[38px] inline-flex items-center gap-1 px-2 py-1.5 text-[11px] rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
+                        isAdminMode
+                          ? 'bg-amber-50 night:bg-amber-200/60 dark:bg-amber-950/60 text-amber-900 night:text-[#4e340b] dark:text-amber-300 border-amber-300 dark:border-amber-700 font-semibold'
+                          : 'bg-sky-50 night:bg-emerald-900/15 dark:bg-sky-950/50 text-sky-800 night:text-[#0B5D3B] dark:text-sky-300 border-sky-200 night:border-emerald-700/35 dark:border-sky-800 font-medium'
+                      }`}
                     >
-                      <div className="flex items-start gap-2.5">
-                        <div
-                          className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                            isAdminMode
-                              ? 'bg-amber-100 night:bg-amber-200/70 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300'
-                              : 'bg-sky-100 night:bg-emerald-900/20 dark:bg-sky-950/70 text-sky-700 night:text-[#0B5D3B] dark:text-sky-300'
-                          }`}
-                        >
-                          {isAdminMode ? (
-                            <Crown className="w-4 h-4" />
-                          ) : (
-                            <UserIcon className="w-4 h-4" />
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-xs font-semibold st-text-primary flex items-center gap-1.5">
-                            <span>{isAdminMode ? 'Mode: Admin' : 'Mode: Operator'}</span>
-                            {isAdminMode && (
-                              <ShieldCheck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                      {isAdminMode ? (
+                        <Crown className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                      ) : (
+                        <UserIcon className="w-3.5 h-3.5 shrink-0" />
+                      )}
+                      <span className="hidden min-[380px]:inline">
+                        {isAdminMode ? 'Admin' : 'Operator'}
+                      </span>
+                    </button>
+
+                    {roleMenuOpen && (
+                      <div
+                        role="dialog"
+                        aria-label="Status peran pengguna"
+                        className="absolute right-0 mt-2 w-72 max-w-[calc(100vw-1.5rem)] st-surface border rounded-xl shadow-xl p-3.5 z-50 space-y-3"
+                      >
+                        <div className="flex items-start gap-2.5">
+                          <div
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                              isAdminMode
+                                ? 'bg-amber-100 night:bg-amber-200/70 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300'
+                                : 'bg-sky-100 night:bg-emerald-900/20 dark:bg-sky-950/70 text-sky-700 night:text-[#0B5D3B] dark:text-sky-300'
+                            }`}
+                          >
+                            {isAdminMode ? (
+                              <Crown className="w-4 h-4" />
+                            ) : (
+                              <UserIcon className="w-4 h-4" />
                             )}
                           </div>
-                          <p className="text-[11px] st-text-muted mt-0.5 leading-relaxed">
-                            {isAdminMode
-                              ? `${googleUser?.email || OWNER_GOOGLE_EMAIL} — Akses penuh aktif (Proteksi & Jembatan Pemilik, Spreadsheet, dan Buka Kunci Sistem).`
-                              : 'Akses Operator — Siap membuat & mencatat Surat Tugas ke Worksheet.'}
-                          </p>
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold st-text-primary flex items-center gap-1.5">
+                              <span>{isAdminMode ? 'Mode: Admin' : 'Mode: Operator'}</span>
+                              {isAdminMode && (
+                                <ShieldCheck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                              )}
+                            </div>
+                            <p className="text-[11px] st-text-muted mt-0.5 leading-relaxed">
+                              {isAdminMode
+                                ? `${googleUser?.email || OWNER_GOOGLE_EMAIL} — Akses penuh aktif (Proteksi & Jembatan Pemilik, Spreadsheet, dan Buka Kunci Sistem).`
+                                : 'Akses Operator — Siap membuat & mencatat Surat Tugas ke Worksheet.'}
+                            </p>
+                          </div>
                         </div>
-                      </div>
 
-                      <div className="pt-2 border-t st-border space-y-2">
-                        {isAdminMode ? (
+                        <div className="pt-2 border-t st-border space-y-2">
+                          {isAdminMode ? (
+                            <button
+                              type="button"
+                              onClick={() => void handleGoogleLogout()}
+                              className="w-full min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-red-700 dark:text-red-300 bg-red-50 night:bg-red-100/70 dark:bg-red-950/50 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-100 dark:hover:bg-red-950/70 transition-colors"
+                            >
+                              <LogOut className="w-3.5 h-3.5" />
+                              Keluar Mode Admin
+                            </button>
+                          ) : (
+                            <div className="flex flex-col gap-2">
+                              <GoogleSignInButton
+                                onClick={() => void handleGoogleLogin()}
+                                disabled={isGoogleConnecting}
+                                label={
+                                  isGoogleConnecting
+                                    ? 'Menghubungkan...'
+                                    : 'Masuk Admin (Google)'
+                                }
+                              />
+                            </div>
+                          )}
+
                           <button
                             type="button"
-                            onClick={() => void handleGoogleLogout()}
-                            className="w-full min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-red-700 dark:text-red-300 bg-red-50 night:bg-red-100/70 dark:bg-red-950/50 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-100 dark:hover:bg-red-950/70 transition-colors"
+                            onClick={() => {
+                              setRoleMenuOpen(false);
+                              setActiveTab('sheets');
+                            }}
+                            className="w-full min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium st-text-secondary st-surface-muted border rounded-lg hover:opacity-90 transition-colors"
                           >
-                            <LogOut className="w-3.5 h-3.5" />
-                            Keluar Mode Admin
+                            <FileSpreadsheet className="w-3.5 h-3.5 text-[#0B5D3B] dark:text-emerald-400" />
+                            Buka Tracking Sheets
                           </button>
-                        ) : (
-                          <div className="flex flex-col gap-2">
-                            <GoogleSignInButton
-                              onClick={() => void handleGoogleLogin()}
-                              disabled={isGoogleConnecting}
-                              label={
-                                isGoogleConnecting
-                                  ? 'Menghubungkan...'
-                                  : 'Masuk Admin (Google)'
-                              }
-                            />
-                          </div>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setRoleMenuOpen(false);
-                            setActiveTab('sheets');
-                          }}
-                          className="w-full min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium st-text-secondary st-surface-muted border rounded-lg hover:opacity-90 transition-colors"
-                        >
-                          <FileSpreadsheet className="w-3.5 h-3.5 text-[#0B5D3B] dark:text-emerald-400" />
-                          Buka Tracking Sheets
-                        </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
+              </div>
+
+              <div className="px-2.5 py-1 border-t st-border flex items-center justify-between gap-2 text-[11px] st-surface-muted/60">
+                {renderSyncStatusPill()}
+                <span className="font-mono-tabular text-[10px] st-text-muted truncate">
+                  Sheet {getTargetYearForSurat(surat)}
+                </span>
               </div>
             </header>
 
             {mobileMenuOpen && (
-              <div className="no-print st-surface border-b st-border shadow-lg z-20 px-3 py-3 space-y-3.5 max-h-[calc(100vh-3.75rem)] overflow-y-auto">
+              <div className="no-print st-surface border-b st-border shadow-lg z-20 px-3 py-3 space-y-3.5 max-h-[calc(100vh-5.5rem)] overflow-y-auto">
                 <div>
                   <div className="text-[11px] font-semibold uppercase tracking-wide st-text-muted mb-1.5">
                     Menu Utama
@@ -1997,15 +1955,14 @@ export default function App() {
                   )}
                   <button
                     type="button"
-                    disabled={isSyncingSheets}
                     onClick={() => {
                       setMobileMenuOpen(false);
-                      void handlePrintPdf();
+                      handlePrintPdf();
                     }}
-                    className="w-full min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60"
+                    className="w-full min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E]"
                   >
                     <Printer className="w-4 h-4" />
-                    {isSyncingSheets ? 'Menyimpan...' : 'Cetak / PDF'}
+                    Cetak / PDF
                   </button>
                 </div>
               </div>
@@ -2013,7 +1970,7 @@ export default function App() {
           </>
         ) : (
           /* TOP BAR CONTRACT: 3 zones on desktop/tablet */
-          <header className="no-print sticky top-0 z-30 st-surface border-b px-3 sm:px-6 py-2 lg:py-0 lg:h-14 flex flex-wrap lg:flex-nowrap items-center justify-between gap-x-3 gap-y-1.5 lg:gap-4">
+          <header className="no-print sticky top-0 z-30 st-surface border-b px-3 sm:px-6 py-2 xl:py-0 xl:h-14 flex flex-wrap xl:flex-nowrap items-center justify-between gap-x-3 gap-y-1.5 xl:gap-4">
             <a
               href="#editor"
               onClick={(e) => {
@@ -2027,12 +1984,12 @@ export default function App() {
 
             <nav
               aria-label="Menu utama"
-              className="order-3 lg:order-2 w-full lg:w-auto lg:min-w-0 border-t border-slate-100 night:border-[#e4d5b3] dark:border-slate-700/70 lg:border-t-0 pt-1.5 lg:pt-0 flex items-center justify-between sm:justify-start gap-2.5 sm:gap-5 lg:gap-5 text-[11px] sm:text-xs lg:text-sm font-medium overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              className="order-3 xl:order-2 w-full xl:w-auto xl:min-w-0 border-t border-slate-100 night:border-[#e4d5b3] dark:border-slate-700/70 xl:border-t-0 pt-1.5 xl:pt-0 flex items-center justify-between sm:justify-start gap-2.5 sm:gap-5 xl:gap-5 text-[11px] sm:text-xs xl:text-sm font-medium overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             >
               <button
                 type="button"
                 onClick={() => setActiveTab('editor')}
-                className={`py-1.5 lg:py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
+                className={`py-1.5 xl:py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
                   activeTab === 'editor'
                     ? 'text-[#0B5D3B] dark:text-emerald-400 border-[#0B5D3B] dark:border-emerald-400'
                     : 'st-text-secondary border-transparent hover:text-slate-900 night:hover:text-[#3b3228] dark:hover:text-slate-100'
@@ -2043,7 +2000,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setActiveTab('pegawai')}
-                className={`py-1.5 lg:py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
+                className={`py-1.5 xl:py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
                   activeTab === 'pegawai'
                     ? 'text-[#0B5D3B] dark:text-emerald-400 border-[#0B5D3B] dark:border-emerald-400'
                     : 'st-text-secondary border-transparent hover:text-slate-900 night:hover:text-[#3b3228] dark:hover:text-slate-100'
@@ -2054,7 +2011,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setActiveTab('sheets')}
-                className={`py-1.5 lg:py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
+                className={`py-1.5 xl:py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
                   activeTab === 'sheets'
                     ? 'text-[#0B5D3B] dark:text-emerald-400 border-[#0B5D3B] dark:border-emerald-400'
                     : 'st-text-secondary border-transparent hover:text-slate-900 night:hover:text-[#3b3228] dark:hover:text-slate-100'
@@ -2065,7 +2022,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setActiveTab('arsip')}
-                className={`py-1.5 lg:py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
+                className={`py-1.5 xl:py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
                   activeTab === 'arsip'
                     ? 'text-[#0B5D3B] dark:text-emerald-400 border-[#0B5D3B] dark:border-emerald-400'
                     : 'st-text-secondary border-transparent hover:text-slate-900 night:hover:text-[#3b3228] dark:hover:text-slate-100'
@@ -2075,7 +2032,9 @@ export default function App() {
               </button>
             </nav>
 
-            <div className="order-2 lg:order-3 flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <div className="order-2 xl:order-3 flex items-center gap-1.5 sm:gap-2 shrink-0">
+              {renderSyncStatusPill()}
+
               <ThemeSwitcher themeMode={themeMode} onChange={setThemeMode} />
 
               <button
@@ -2198,14 +2157,11 @@ export default function App() {
 
               <button
                 type="button"
-                disabled={isSyncingSheets}
-                onClick={() => void handlePrintPdf()}
-                className="inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
+                onClick={handlePrintPdf}
+                className="inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] transition-colors whitespace-nowrap shrink-0"
               >
                 <Printer className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">
-                  {isSyncingSheets ? 'Menyimpan...' : 'Cetak / PDF'}
-                </span>
+                <span className="hidden sm:inline">Cetak / PDF</span>
               </button>
             </div>
           </header>
@@ -2312,6 +2268,10 @@ export default function App() {
             selectedYear={selectedYear}
             rows={sheetRows}
             errorMessage={sheetsError}
+            migrasiSt2026Items={migrasiSt2026Items}
+            migrasiSyncProgress={migrasiSyncProgress}
+            isSyncingMigrasi={isSyncingMigrasi}
+            onBatchSyncMigrasiSt2026={() => void handleBatchSyncMigrasiSt2026()}
             onGoogleLogin={() => void handleGoogleLogin()}
             onGoogleLogout={() => void handleGoogleLogout()}
             onAutoSetupSpreadsheet={() => void handleAutoSetupSpreadsheet()}
@@ -2342,17 +2302,23 @@ export default function App() {
                 ...draft,
                 pegawaiList: draft.pegawaiList.map((p) => ({ ...p })),
               };
-              setSurat(loadedDraft);
+              const loadedSig = computeSuratSignature(loadedDraft);
+              initialSigRef.current = loadedSig;
+              lastAttemptedSigRef.current = '';
+              setAutoSyncError(null);
               if (asTemplateCopy) {
                 setCopiedSourceRef({
                   sourceId: loadedDraft.id,
                   fingerprint: generateSuratFingerprint(loadedDraft),
                 });
-                setLastSyncedSignature('');
+                lastSyncedSigRef.current = '';
+                setAutoSyncStatus('idle');
               } else {
                 setCopiedSourceRef(null);
-                setLastSyncedSignature(computeSuratSignature(loadedDraft));
+                lastSyncedSigRef.current = loadedSig;
+                setAutoSyncStatus('synced');
               }
+              setSurat(loadedDraft);
               setActiveTab('editor');
               showToast(
                 asTemplateCopy
@@ -2369,15 +2335,22 @@ export default function App() {
           <ArsipManager
             arsipList={arsipList}
             onLoadArsip={(item) => {
-              setCopiedSourceRef(null);
-              setSurat({
+              const loadedDraft: SuratTugasData = {
                 ...item.data,
                 pegawaiList: item.data.pegawaiList.map((p) => ({ ...p })),
-              });
+              };
+              const loadedSig = computeSuratSignature(loadedDraft);
+              setCopiedSourceRef(null);
+              initialSigRef.current = loadedSig;
+              lastSyncedSigRef.current =
+                item.status === 'Tercatat' ? loadedSig : '';
+              lastAttemptedSigRef.current = '';
+              setAutoSyncError(null);
+              setAutoSyncStatus(item.status === 'Tercatat' ? 'synced' : 'idle');
+              setSurat(loadedDraft);
               setActiveTab('editor');
               showToast('Draft dimuat ke editor');
             }}
-            onSyncArsipToSheets={(item) => void syncDraftToGoogleSheets(item.data)}
             onDeleteArsip={(id) => {
               setArsipList((prev) => prev.filter((a) => a.id !== id));
               showToast('Draft dihapus');
@@ -2998,15 +2971,13 @@ export default function App() {
                 <Save className="w-3.5 h-3.5 text-[#0B5D3B] dark:text-emerald-400" />
                 Simpan ke Draft
               </button>
-              <button
-                type="button"
-                disabled={isExportingDocx || isSyncingSheets || isProcessingDocxConfirm}
-                onClick={handleExportDocx}
-                className="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
-              >
-                <Download className="w-3.5 h-3.5" />
-                {isExportingDocx ? 'Menyiapkan...' : 'Unduh .docx'}
-              </button>
+              <DownloadSplitButton
+                exportingFormat={exportingFormat}
+                modeSrikandi={surat.modeSrikandi}
+                menuPlacement="top"
+                fullWidth={isMobileLayout}
+                onExport={(format) => void handleExportSurat(format)}
+              />
             </div>
           </div>
         </section>
@@ -3089,37 +3060,13 @@ export default function App() {
                 Simpan ke Draft
               </button>
 
-              <button
-                type="button"
-                disabled={isSyncingSheets}
-                onClick={() => void syncDraftToGoogleSheets(surat)}
-                className="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 border border-emerald-200 night:border-emerald-700/35 dark:border-emerald-800 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-950/75 disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5" />
-                {isSyncingSheets
-                  ? 'Menyimpan...'
-                  : lastSyncedSignature === computeSuratSignature(surat)
-                    ? 'Tercatat di Sheets'
-                    : isMobileLayout
-                      ? 'Simpan ke Sheets'
-                      : 'Simpan ke Sheets (Wajib)'}
-              </button>
-
-              <button
-                type="button"
-                disabled={isExportingDocx || isSyncingSheets || isProcessingDocxConfirm}
-                onClick={handleExportDocx}
-                className={`min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60 transition-colors whitespace-nowrap shrink-0 ${
-                  isMobileLayout ? 'col-span-2' : ''
-                }`}
-              >
-                <Download className="w-3.5 h-3.5" />
-                {isExportingDocx
-                  ? 'Menyiapkan...'
-                  : isSyncingSheets || isProcessingDocxConfirm
-                    ? 'Menyimpan ke Sheets...'
-                    : 'Unduh .docx'}
-              </button>
+              <DownloadSplitButton
+                exportingFormat={exportingFormat}
+                modeSrikandi={surat.modeSrikandi}
+                menuPlacement="bottom"
+                fullWidth={isMobileLayout}
+                onExport={(format) => void handleExportSurat(format)}
+              />
             </div>
           </div>
 
@@ -3199,7 +3146,7 @@ export default function App() {
         onSelectMultiple={handleSelectMultipleFromDir}
       />
 
-      {/* GOOGLE SHEETS SIGN-IN PROMPT MODAL */}
+      {/* GOOGLE SHEETS SIGN-IN PROMPT MODAL (only when user clicks retry without Bridge/Admin connection) */}
       <SheetsAuthPromptModal
         isOpen={authPromptDraft !== null}
         targetYear={
@@ -3208,73 +3155,10 @@ export default function App() {
             : String(new Date().getFullYear())
         }
         isConnecting={isGoogleConnecting}
-        pendingActionLabel={
-          pendingOutputAction === 'print'
-            ? 'Cetak / PDF'
-            : pendingOutputAction === 'docx'
-              ? 'Unduh Word (.docx)'
-              : null
-        }
+        pendingActionLabel={null}
         onSignIn={() => void handleGoogleLogin()}
         onOpenTrackingTab={() => setActiveTab('sheets')}
-        onClose={() => {
-          setAuthPromptDraft(null);
-          setPendingOutputAction(null);
-        }}
-      />
-
-      {/* GOOGLE SHEETS OVERWRITE CONFIRMATION MODAL */}
-      <ConfirmSheetsOverwriteModal
-        isOpen={overwriteConfirm !== null}
-        year={overwriteConfirm?.year || ''}
-        rowNumber={overwriteConfirm?.rowNumber || 0}
-        namaKegiatan={overwriteConfirm?.draft.namaKegiatan || ''}
-        isBusy={isSyncingSheets}
-        onConfirm={() => void handleConfirmOverwriteRow()}
-        onCancel={() => {
-          setOverwriteConfirm(null);
-          setPendingOutputAction(null);
-        }}
-      />
-
-      {/* KONFIRMASI UNDUH .DOCX & PENCATATAN OTOMATIS WORKSHEET */}
-      <ConfirmDocxExportModal
-        isOpen={docxConfirmOpen}
-        namaKegiatan={surat.namaKegiatan}
-        targetYear={getTargetYearForSurat(surat)}
-        isBusy={isProcessingDocxConfirm}
-        errorMessage={docxConfirmError}
-        onConfirmRecordAndDownload={() => void handleConfirmRecordAndDownloadDocx()}
-        onForceDownloadOnly={() => void handleForceDownloadDocxOnly()}
-        onCancel={() => {
-          if (isProcessingDocxConfirm) return;
-          setDocxConfirmOpen(false);
-          setDocxConfirmError(null);
-        }}
-      />
-
-      {/* PERINGATAN DUPLIKASI SURAT TUGAS DI WORKSHEET */}
-      <DuplicateSuratWarningModal
-        isOpen={duplicateWarning !== null}
-        waktuInputSebelumnya={duplicateWarning?.match.row.waktuInput || ''}
-        rowNumber={duplicateWarning?.match.row.rowNumber || 0}
-        targetYear={duplicateWarning?.targetYear || ''}
-        namaKegiatan={
-          duplicateWarning?.draft.namaKegiatan ||
-          duplicateWarning?.match.row.namaKegiatan ||
-          ''
-        }
-        matchedBy={duplicateWarning?.match.matchedBy || 'fingerprint'}
-        busyAction={duplicateBusyAction}
-        errorMessage={duplicateError}
-        onDownloadOnly={() => void handleDuplicateDownloadOnly()}
-        onOverwriteOld={() => void handleDuplicateOverwriteOld()}
-        onSaveAsNew={() => void handleDuplicateSaveAsNew()}
-        onCancel={() => {
-          if (duplicateBusyAction) return;
-          setDuplicateWarning(null);
-          setDuplicateError(null);
-        }}
+        onClose={() => setAuthPromptDraft(null)}
       />
       </div>
     </div>

@@ -200,6 +200,7 @@ export const SuratPreview: React.FC<SuratPreviewProps> = ({
       )}
       <div className="print-scale-reset-box relative" style={outerBoxStyle}>
         <div
+          id="surat-preview-paper"
           ref={paperStackRef}
           className="flex flex-col items-center print-scale-reset"
           style={scaleWrapperStyle}

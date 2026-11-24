@@ -1,5 +1,10 @@
-import React, { useMemo, useState } from 'react';
-import { FileSpreadsheet, FileText, FolderOpen, Search, Trash2 } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  FileText,
+  FolderOpen,
+  Search,
+  Trash2,
+} from 'lucide-react';
 import { useViewport } from '../contexts/ViewportContext';
 import { ArsipSurat, KriteriaKeberangkatan } from '../types/surat';
 import { formatTanggalIndo } from '../utils/dateFormat';
@@ -7,7 +12,6 @@ import { formatTanggalIndo } from '../utils/dateFormat';
 interface ArsipManagerProps {
   arsipList: ArsipSurat[];
   onLoadArsip: (arsip: ArsipSurat) => void;
-  onSyncArsipToSheets: (arsip: ArsipSurat) => void;
   onDeleteArsip: (id: string) => void;
   onGoToEditor: () => void;
 }
@@ -18,46 +22,91 @@ const KRITERIA_LABELS: Record<KriteriaKeberangkatan, string> = {
   terlampir: '> 3 Orang (Terlampir)',
 };
 
+const PAGE_SIZE = 30;
+
 export const ArsipManager: React.FC<ArsipManagerProps> = ({
   arsipList,
   onLoadArsip,
-  onSyncArsipToSheets,
   onDeleteArsip,
   onGoToEditor,
 }) => {
   const { isMobileLayout } = useViewport();
   const [query, setQuery] = useState('');
-  const [filterKriteria, setFilterKriteria] = useState<'semua' | KriteriaKeberangkatan>('semua');
+  const [filterKriteria, setFilterKriteria] = useState<
+    'semua' | KriteriaKeberangkatan
+  >('semua');
+  const [filterStatus, setFilterStatus] = useState<'semua' | 'Draft' | 'Tercatat'>(
+    'semua'
+  );
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [query, filterKriteria, filterStatus]);
 
   const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
     return arsipList.filter((item) => {
       if (filterKriteria !== 'semua' && item.data.kriteria !== filterKriteria) {
         return false;
       }
-      const q = query.trim().toLowerCase();
+      const itemStatus = item.status === 'Tercatat' ? 'Tercatat' : 'Draft';
+      if (filterStatus !== 'semua' && itemStatus !== filterStatus) {
+        return false;
+      }
       if (!q) return true;
       return (
         item.data.namaKegiatan.toLowerCase().includes(q) ||
         item.data.lokasiTujuan.toLowerCase().includes(q) ||
         item.data.dasarAsal.toLowerCase().includes(q) ||
-        item.data.pegawaiList.some((p) => p.nama.toLowerCase().includes(q))
+        item.data.dasarNomor.toLowerCase().includes(q) ||
+        item.data.nomorSurat.toLowerCase().includes(q) ||
+        item.data.id.toLowerCase().includes(q) ||
+        (item.data.statusSurat || '').toLowerCase().includes(q) ||
+        item.data.tanggalMulai.toLowerCase().includes(q) ||
+        item.data.pegawaiList.some(
+          (p) =>
+            p.nama.toLowerCase().includes(q) ||
+            p.nip.toLowerCase().includes(q)
+        )
       );
     });
-  }, [arsipList, filterKriteria, query]);
+  }, [arsipList, filterKriteria, filterStatus, query]);
+
+  const visibleItems = useMemo(
+    () => filtered.slice(0, visibleCount),
+    [filtered, visibleCount]
+  );
+
+  const counts = useMemo(() => {
+    let draft = 0;
+    let tercatat = 0;
+    for (const item of arsipList) {
+      if (item.status === 'Tercatat') tercatat += 1;
+      else draft += 1;
+    }
+    return { draft, tercatat };
+  }, [arsipList]);
 
   return (
-    <div className={`max-w-6xl mx-auto ${isMobileLayout ? 'px-3 py-4' : 'px-4 sm:px-6 py-6 sm:py-8'}`}>
+    <div
+      className={`max-w-6xl mx-auto ${
+        isMobileLayout ? 'px-3 py-4' : 'px-4 sm:px-6 py-6 sm:py-8'
+      }`}
+    >
       <div
         className={`flex justify-between gap-3 mb-5 ${
-          isMobileLayout ? 'flex-col items-stretch' : 'flex-col sm:flex-row sm:items-center mb-6 gap-4'
+          isMobileLayout
+            ? 'flex-col items-stretch'
+            : 'flex-col sm:flex-row sm:items-center mb-6 gap-4'
         }`}
       >
         <div>
           <h1 className="text-lg sm:text-xl font-semibold st-text-primary">
-            Daftar Draft Surat Tugas
+            Daftar Draft &amp; Riwayat Surat Tugas
           </h1>
           <p className="text-xs sm:text-sm st-text-secondary mt-1">
-            Draft tersimpan di penyimpanan lokal peramban ini untuk dibuka kembali, dicatat ke Google Sheets, atau diunduh ke Word (.docx).
+            Total {arsipList.length.toLocaleString('id-ID')} data tersimpan lokal ({counts.draft.toLocaleString('id-ID')} Draft, {counts.tercatat.toLocaleString('id-ID')} Tercatat) untuk dibuka kembali, dicatat ke Google Sheets, atau diunduh ke Word (.docx).
           </p>
         </div>
         <button
@@ -71,44 +120,78 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
       </div>
 
       <div className="st-surface border rounded-xl overflow-hidden">
-        <div
-          className={`px-3.5 sm:px-4 py-3 border-b st-border st-surface-muted flex justify-between gap-3 ${
-            isMobileLayout ? 'flex-col items-stretch' : 'flex-col lg:flex-row lg:items-center'
-          }`}
-        >
-          <div className={`relative flex-1 ${isMobileLayout ? '' : 'max-w-md'}`}>
-            <Search className="w-4 h-4 st-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Cari kegiatan, lokasi, dasar surat, atau nama pegawai..."
-              className="w-full min-h-[44px] pl-9 pr-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
-            />
+        <div className="px-3.5 sm:px-4 py-3 border-b st-border st-surface-muted space-y-2.5">
+          <div
+            className={`flex justify-between gap-3 ${
+              isMobileLayout
+                ? 'flex-col items-stretch'
+                : 'flex-col lg:flex-row lg:items-center'
+            }`}
+          >
+            <div className={`relative flex-1 ${isMobileLayout ? '' : 'max-w-md'}`}>
+              <Search className="w-4 h-4 st-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Cari kegiatan, nomor dasar, ID surat, lokasi, nama/NIP pegawai..."
+                className="w-full min-h-[44px] pl-9 pr-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1 p-1 bg-slate-200/70 night:bg-[#e7d8b4] dark:bg-slate-800 rounded-lg overflow-x-auto">
+                {(
+                  [
+                    ['semua', 'Semua Status'],
+                    ['Draft', `Draft (${counts.draft})`],
+                    ['Tercatat', `Tercatat (${counts.tercatat})`],
+                  ] as const
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setFilterStatus(key)}
+                    className={`min-h-[36px] px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                      filterStatus === key
+                        ? 'st-surface st-text-primary shadow-xs'
+                        : 'st-text-secondary hover:opacity-80'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-1 p-1 bg-slate-200/70 night:bg-[#e7d8b4] dark:bg-slate-800 rounded-lg overflow-x-auto">
+                {(
+                  [
+                    ['semua', 'Semua'],
+                    ['sendiri', 'Sendiri'],
+                    ['tiga_orang', '2-3 Orang'],
+                    ['terlampir', 'Terlampir'],
+                  ] as const
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setFilterKriteria(key)}
+                    className={`min-h-[36px] px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                      filterKriteria === key
+                        ? 'st-surface st-text-primary shadow-xs'
+                        : 'st-text-secondary hover:opacity-80'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
-          <div className="flex items-center gap-1 p-1 bg-slate-200/70 night:bg-[#e7d8b4] dark:bg-slate-800 rounded-lg overflow-x-auto">
-            {(
-              [
-                ['semua', 'Semua'],
-                ['sendiri', 'Sendiri'],
-                ['tiga_orang', '2-3 Orang'],
-                ['terlampir', 'Terlampir'],
-              ] as const
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setFilterKriteria(key)}
-                className={`min-h-[38px] px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
-                  filterKriteria === key
-                    ? 'st-surface st-text-primary shadow-xs'
-                    : 'st-text-secondary hover:opacity-80'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+          <div className="text-[11px] st-text-muted font-mono-tabular">
+            Menampilkan {visibleItems.length.toLocaleString('id-ID')} dari{' '}
+            {filtered.length.toLocaleString('id-ID')} surat cocok
           </div>
         </div>
 
@@ -130,84 +213,120 @@ export const ArsipManager: React.FC<ArsipManagerProps> = ({
           </div>
         ) : filtered.length === 0 ? (
           <div className="py-12 px-6 text-center text-sm st-text-muted">
-            Tidak ada draft yang cocok dengan filter saat ini.
+            Tidak ada draft atau riwayat yang cocok dengan filter saat ini.
           </div>
         ) : (
-          <div className="divide-y divide-slate-100 night:divide-[#e4d5b3] dark:divide-slate-700/70">
-            {filtered.map((item) => {
-              const firstName = item.data.pegawaiList[0]?.nama || 'Belum ada pegawai';
-              const totalPegawai = item.data.pegawaiList.length;
-              const isTercatat = item.status === 'Tercatat';
-              return (
-                <div
-                  key={item.id}
-                  className={`px-4 sm:px-5 py-4 flex justify-between gap-3 hover:bg-slate-50/70 night:hover:bg-[#f5ecd5] dark:hover:bg-slate-800/60 transition-colors ${
-                    isMobileLayout ? 'flex-col' : 'flex-col md:flex-row md:items-center gap-4'
-                  }`}
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span
-                        className={`px-2 py-0.5 text-[11px] font-semibold rounded-md border ${
-                          isTercatat
-                            ? 'bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 text-[#0B5D3B] dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
-                            : 'bg-amber-50 night:bg-amber-900/15 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800'
-                        }`}
-                      >
-                        {isTercatat ? 'Tercatat' : 'Draft'}
-                      </span>
-                      <div className="text-sm font-semibold st-text-primary line-clamp-2 sm:line-clamp-1">
+          <>
+            <div className="divide-y divide-slate-100 night:divide-[#e4d5b3] dark:divide-slate-700/70">
+              {visibleItems.map((item) => {
+                const validPegawai = item.data.pegawaiList.filter(
+                  (p) => p.nama.trim() || p.nip.trim()
+                );
+                const firstName = validPegawai[0]?.nama || '';
+                const totalPegawai = validPegawai.length;
+                const isTercatat = item.status === 'Tercatat';
+                const isMigrasi = Boolean(
+                  item.data.statusSurat?.toLowerCase().includes('migrasi')
+                );
+                const pegawaiLabel =
+                  item.data.kriteria === 'terlampir' && totalPegawai === 0
+                    ? 'Terlampir (data Excel)'
+                    : totalPegawai > 0
+                      ? `${totalPegawai} pegawai (${firstName}${
+                          totalPegawai > 1 ? ' dkk.' : ''
+                        })`
+                      : 'Belum ada pegawai';
+
+                return (
+                  <div
+                    key={item.id}
+                    className={`px-4 sm:px-5 py-4 flex justify-between gap-3 hover:bg-slate-50/70 night:hover:bg-[#f5ecd5] dark:hover:bg-slate-800/60 transition-colors ${
+                      isMobileLayout
+                        ? 'flex-col'
+                        : 'flex-col md:flex-row md:items-center gap-4'
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`px-2 py-0.5 text-[11px] font-semibold rounded-md border ${
+                            isTercatat
+                              ? 'bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 text-[#0B5D3B] dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                              : 'bg-amber-50 night:bg-amber-900/15 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                          }`}
+                        >
+                          {isTercatat ? 'Tercatat' : 'Draft'}
+                        </span>
+                        {isMigrasi && (
+                          <span className="px-2 py-0.5 text-[11px] font-medium rounded-md border bg-sky-50 night:bg-[#efe3c4] dark:bg-sky-950/40 text-sky-800 night:text-[#5c4b37] dark:text-sky-300 border-sky-200 night:border-[#d3c096] dark:border-sky-800">
+                            Migrasi 2026
+                          </span>
+                        )}
+                        <span className="text-[11px] font-mono-tabular st-text-muted">
+                          {item.data.id}
+                        </span>
+                      </div>
+                      <div className="text-sm font-semibold st-text-primary mt-1 line-clamp-2 sm:line-clamp-1">
                         {item.data.namaKegiatan || 'Kegiatan belum diisi'}
                       </div>
+                      <div className="text-xs st-text-muted mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span>{KRITERIA_LABELS[item.data.kriteria]}</span>
+                        <span aria-hidden="true">·</span>
+                        <span className="font-mono-tabular">{pegawaiLabel}</span>
+                        <span aria-hidden="true">·</span>
+                        <span>{item.data.lokasiTujuan || '-'}</span>
+                        <span aria-hidden="true">·</span>
+                        <span className="font-mono-tabular">
+                          {formatTanggalIndo(item.data.tanggalMulai)}
+                        </span>
+                      </div>
+                      <div className="text-xs st-text-muted mt-1 break-words">
+                        Dasar: {item.data.dasarAsal || '-'} (
+                        {item.data.dasarNomor || '-'})
+                      </div>
                     </div>
-                    <div className="text-xs st-text-muted mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span>{KRITERIA_LABELS[item.data.kriteria]}</span>
-                      <span aria-hidden="true">·</span>
-                      <span className="font-mono-tabular">
-                        {totalPegawai} pegawai ({firstName}
-                        {totalPegawai > 1 ? ' dkk.' : ''})
-                      </span>
-                      <span aria-hidden="true">·</span>
-                      <span>{item.data.lokasiTujuan || '-'}</span>
-                      <span aria-hidden="true">·</span>
-                      <span className="font-mono-tabular">
-                        {formatTanggalIndo(item.data.tanggalMulai)}
-                      </span>
-                    </div>
-                    <div className="text-xs st-text-muted mt-1 break-words">
-                      Dasar: {item.data.dasarAsal} ({item.data.dasarNomor})
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => onLoadArsip(item)}
+                        className="min-h-[44px] flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] transition-colors whitespace-nowrap shrink-0"
+                      >
+                        <FolderOpen className="w-3.5 h-3.5" />
+                        Buka di Editor
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteArsip(item.id)}
+                        className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center p-2 st-text-muted hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors"
+                        aria-label="Hapus draft"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => onSyncArsipToSheets(item)}
-                      className="min-h-[44px] flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-lg transition-colors whitespace-nowrap shrink-0"
-                    >
-                      <FileSpreadsheet className="w-3.5 h-3.5" />
-                      {isTercatat ? 'Perbarui Sheets' : 'Kirim ke Sheets'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onLoadArsip(item)}
-                      className="min-h-[44px] flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] transition-colors whitespace-nowrap shrink-0"
-                    >
-                      <FolderOpen className="w-3.5 h-3.5" />
-                      Buka di Editor
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onDeleteArsip(item.id)}
-                      className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center p-2 st-text-muted hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors"
-                      aria-label="Hapus draft"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+
+            {filtered.length > visibleItems.length && (
+              <div className="p-4 border-t st-border st-surface-muted flex flex-wrap items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}
+                  className="min-h-[44px] px-4 py-2 text-xs font-semibold text-[#0B5D3B] dark:text-emerald-300 st-surface border rounded-lg hover:opacity-90 transition-colors"
+                >
+                  Tampilkan {Math.min(PAGE_SIZE, filtered.length - visibleItems.length)} Berikutnya
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVisibleCount(filtered.length)}
+                  className="min-h-[44px] px-4 py-2 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90 transition-colors"
+                >
+                  Tampilkan Semua ({filtered.length.toLocaleString('id-ID')})
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

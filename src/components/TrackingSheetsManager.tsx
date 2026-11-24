@@ -1,29 +1,36 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
 import {
+  AlertCircle,
   Check,
   ChevronDown,
   ChevronUp,
   Copy,
+  Database,
   ExternalLink,
   FileSpreadsheet,
   FolderOpen,
   Link2,
+  Loader2,
   Lock,
   LogOut,
   Plus,
   RefreshCw,
   Search,
   ShieldCheck,
+  Upload,
   Wrench,
 } from 'lucide-react';
 import { useViewport } from '../contexts/ViewportContext';
 import {
+  generateSuratFingerprint,
+  getTrackedRowFingerprint,
+  MigrasiBatchSyncProgress,
   OWNER_GOOGLE_EMAIL,
   SpreadsheetSummary,
   TrackedSuratRow,
 } from '../services/googleSheets';
-import { SuratTugasData } from '../types/surat';
+import { KriteriaKeberangkatan, SuratTugasData } from '../types/surat';
 import { generateOwnerAppsScriptCode } from '../utils/appsScriptTemplate';
 import { formatTanggalIndo } from '../utils/dateFormat';
 import { GoogleSignInButton } from './GoogleSignInButton';
@@ -42,6 +49,10 @@ interface TrackingSheetsManagerProps {
   selectedYear: string;
   rows: TrackedSuratRow[];
   errorMessage: string | null;
+  migrasiSt2026Items: SuratTugasData[];
+  migrasiSyncProgress: MigrasiBatchSyncProgress | null;
+  isSyncingMigrasi: boolean;
+  onBatchSyncMigrasiSt2026: () => void;
   onGoogleLogin: () => void;
   onGoogleLogout: () => void;
   onAutoSetupSpreadsheet: () => void;
@@ -54,6 +65,14 @@ interface TrackingSheetsManagerProps {
   onRefreshRows: () => void;
   onLoadTrackedDraft: (draft: SuratTugasData, asTemplateCopy: boolean) => void;
 }
+
+const KRITERIA_LABELS: Record<KriteriaKeberangkatan, string> = {
+  sendiri: 'Sendiri (1 Orang)',
+  tiga_orang: '2-3 Orang',
+  terlampir: '> 3 Orang (Terlampir)',
+};
+
+const TABLE_PAGE_SIZE = 50;
 
 export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
   googleUser,
@@ -69,6 +88,10 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
   selectedYear,
   rows,
   errorMessage,
+  migrasiSt2026Items,
+  migrasiSyncProgress,
+  isSyncingMigrasi,
+  onBatchSyncMigrasiSt2026,
   onGoogleLogin,
   onGoogleLogout,
   onAutoSetupSpreadsheet,
@@ -92,20 +115,97 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
   const [showOwnerSetup, setShowOwnerSetup] = useState(false);
   const [bridgeUrlInput, setBridgeUrlInput] = useState(localBridgeUrl);
   const [copiedScript, setCopiedScript] = useState(false);
+  const [includeUnsyncedMigrasi, setIncludeUnsyncedMigrasi] = useState(false);
+  const [visibleRowCount, setVisibleRowCount] = useState(TABLE_PAGE_SIZE);
+
+  useEffect(() => {
+    setVisibleRowCount(TABLE_PAGE_SIZE);
+  }, [query, selectedYear, includeUnsyncedMigrasi]);
+
+  const unsyncedMigrasiRows = useMemo<
+    Array<TrackedSuratRow & { isLocalMigrasiOnly?: boolean }>
+  >(() => {
+    if (selectedYear !== '2026' || migrasiSt2026Items.length === 0) return [];
+    const sheetIds = new Set(rows.map((r) => r.idSurat.trim()).filter(Boolean));
+    const sheetFps = new Set(
+      rows.map((r) => getTrackedRowFingerprint(r)).filter(Boolean)
+    );
+
+    const pending: Array<TrackedSuratRow & { isLocalMigrasiOnly?: boolean }> = [];
+    for (const item of migrasiSt2026Items) {
+      const id = (item.id || '').trim();
+      const fp = generateSuratFingerprint(item);
+      if ((id && sheetIds.has(id)) || (fp && sheetFps.has(fp))) {
+        continue;
+      }
+      const validPegawai = item.pegawaiList.filter(
+        (p) => p.nama.trim() || p.nip.trim()
+      );
+      const pegawaiRingkas =
+        validPegawai
+          .map((p, i) => `${i + 1}. ${p.nama || '-'}${p.nip ? ` (${p.nip})` : ''}`)
+          .join('\n') || (item.kriteria === 'terlampir' ? 'Terlampir' : '-');
+
+      pending.push({
+        rowNumber: 0,
+        idSurat: item.id,
+        waktuInput: `${formatTanggalIndo(item.tanggalNaskah)} (Migrasi Lokal 2026)`,
+        nomorSurat: '${nomor_naskah} (Srikandi)',
+        tanggalSurat: item.tanggalNaskah || '-',
+        kriteria: KRITERIA_LABELS[item.kriteria],
+        dasarAsal: item.dasarAsal || '-',
+        dasarNomor: item.dasarNomor || '-',
+        dasarTanggal: item.dasarTanggal || '-',
+        namaKegiatan: item.namaKegiatan || '-',
+        lokasiTujuan: item.lokasiTujuan || '-',
+        tanggalMulai: item.tanggalMulai || '-',
+        tanggalSelesai: item.tanggalSelesai || '-',
+        jumlahPegawai: validPegawai.length,
+        daftarPegawaiRingkas: pegawaiRingkas,
+        penandatangan: item.namaPenandatangan || 'Kepala Kantor',
+        rawDraft: item,
+        isLocalMigrasiOnly: true,
+      });
+    }
+    return pending.sort((a, b) =>
+      (b.tanggalSurat || '').localeCompare(a.tanggalSurat || '')
+    );
+  }, [migrasiSt2026Items, rows, selectedYear]);
+
+  const combinedRows = useMemo<
+    Array<TrackedSuratRow & { isLocalMigrasiOnly?: boolean }>
+  >(() => {
+    const liveRows: Array<TrackedSuratRow & { isLocalMigrasiOnly?: boolean }> =
+      rows;
+    if (selectedYear !== '2026' || unsyncedMigrasiRows.length === 0) {
+      return liveRows;
+    }
+    if (includeUnsyncedMigrasi || query.trim().length > 0) {
+      return [...liveRows, ...unsyncedMigrasiRows];
+    }
+    return liveRows;
+  }, [includeUnsyncedMigrasi, query, rows, selectedYear, unsyncedMigrasiRows]);
 
   const filteredRows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter(
+    if (!q) return combinedRows;
+    return combinedRows.filter(
       (r) =>
         r.namaKegiatan.toLowerCase().includes(q) ||
         r.daftarPegawaiRingkas.toLowerCase().includes(q) ||
         r.lokasiTujuan.toLowerCase().includes(q) ||
         r.dasarAsal.toLowerCase().includes(q) ||
         r.dasarNomor.toLowerCase().includes(q) ||
-        r.nomorSurat.toLowerCase().includes(q)
+        r.nomorSurat.toLowerCase().includes(q) ||
+        r.idSurat.toLowerCase().includes(q) ||
+        r.penandatangan.toLowerCase().includes(q)
     );
-  }, [rows, query]);
+  }, [combinedRows, query]);
+
+  const visibleRows = useMemo(
+    () => filteredRows.slice(0, visibleRowCount),
+    [filteredRows, visibleRowCount]
+  );
 
   const sortedSheets = useMemo(() => {
     if (!spreadsheet) return [];
@@ -116,6 +216,10 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
 
   const isAdminMode = isOwner && !needsAuth;
   const canViewTrackingData = bridgeConnected || isAdminMode;
+  const migrasiSyncedCount = Math.max(
+    0,
+    migrasiSt2026Items.length - unsyncedMigrasiRows.length
+  );
 
   const handleCopyAppsScript = async () => {
     const code = generateOwnerAppsScriptCode(OWNER_GOOGLE_EMAIL);
@@ -236,6 +340,106 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
           </button>
         )}
       </div>
+
+      {isAdminMode && migrasiSt2026Items.length > 0 && (
+        <div className="st-surface border rounded-xl p-4 space-y-3">
+          <div
+            className={`flex justify-between gap-3 ${
+              isMobileLayout
+                ? 'flex-col items-stretch'
+                : 'flex-col sm:flex-row sm:items-center'
+            }`}
+          >
+            <div className="flex items-start gap-3 min-w-0">
+              <div className="p-2 rounded-lg shrink-0 bg-amber-50 night:bg-amber-900/15 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300">
+                <Database className="w-5 h-5" />
+              </div>
+              <div className="text-xs space-y-0.5 min-w-0">
+                <div className="font-semibold st-text-primary">
+                  Utilitas Admin · Sinkronisasi Data Awal ST 2026 (Migrasi Excel)
+                </div>
+                <p className="st-text-secondary leading-relaxed">
+                  Mengunggah {migrasiSt2026Items.length.toLocaleString('id-ID')} data riwayat ST 2026 ke tab sheet <span className="font-mono-tabular font-semibold">2026</span> secara bertahap (25 baris/batch) dengan pengecekan otomatis ID &amp; fingerprint agar tidak terjadi duplikasi.
+                  {selectedYear === '2026' && spreadsheet && (
+                    <span className="ml-1 font-mono-tabular st-text-primary">
+                      ({migrasiSyncedCount}/{migrasiSt2026Items.length} sudah tercatat di tab 2026).
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              disabled={isSyncingMigrasi || isSyncing}
+              onClick={onBatchSyncMigrasiSt2026}
+              className="min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
+            >
+              {isSyncingMigrasi ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Menyinkronkan Batch...
+                </>
+              ) : (
+                <>
+                  <Upload className="w-4 h-4" />
+                  Sinkronkan {migrasiSt2026Items.length} Data Awal ST 2026 ke Google Sheets
+                </>
+              )}
+            </button>
+          </div>
+
+          {migrasiSyncProgress && (
+            <div
+              className={`p-3 rounded-lg border text-xs space-y-2 ${
+                migrasiSyncProgress.phase === 'error'
+                  ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/70 text-red-900 dark:text-red-200'
+                  : migrasiSyncProgress.phase === 'done'
+                    ? 'bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-[#0B5D3B] dark:text-emerald-200'
+                    : 'st-surface-muted st-border st-text-primary'
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2 font-medium">
+                <span className="flex items-center gap-1.5">
+                  {migrasiSyncProgress.phase === 'error' ? (
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                  ) : migrasiSyncProgress.phase === 'done' ? (
+                    <Check className="w-4 h-4 shrink-0" />
+                  ) : (
+                    <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                  )}
+                  {migrasiSyncProgress.message}
+                </span>
+                {migrasiSyncProgress.totalBatches > 0 && (
+                  <span className="font-mono-tabular text-[11px]">
+                    Batch {migrasiSyncProgress.currentBatch}/{migrasiSyncProgress.totalBatches} · Masuk:{' '}
+                    {migrasiSyncProgress.inserted} · Lewati:{' '}
+                    {migrasiSyncProgress.skipped}
+                  </span>
+                )}
+              </div>
+
+              {migrasiSyncProgress.totalPending > 0 && (
+                <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                  <div
+                    className="h-full bg-[#0B5D3B] dark:bg-emerald-500 transition-all duration-300"
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        Math.round(
+                          (migrasiSyncProgress.processed /
+                            migrasiSyncProgress.totalPending) *
+                            100
+                        )
+                      )}%`,
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {errorMessage && (
         <div className="p-3.5 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/70 rounded-xl text-xs text-red-800 dark:text-red-200">
@@ -599,24 +803,53 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
 
           {/* DATA TABLE */}
           <div className="st-surface border rounded-xl overflow-hidden">
-            <div
-              className={`px-3.5 sm:px-4 py-3 border-b st-border st-surface-muted flex justify-between gap-3 ${
-                isMobileLayout ? 'flex-col items-stretch' : 'flex-col sm:flex-row sm:items-center'
-              }`}
-            >
-              <div className={`relative flex-1 ${isMobileLayout ? '' : 'max-w-md'}`}>
-                <Search className="w-4 h-4 st-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Cari kegiatan, nama pegawai, lokasi, atau nomor dasar..."
-                  className="w-full min-h-[44px] pl-9 pr-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
-                />
+            <div className="px-3.5 sm:px-4 py-3 border-b st-border st-surface-muted space-y-2">
+              <div
+                className={`flex justify-between gap-3 ${
+                  isMobileLayout
+                    ? 'flex-col items-stretch'
+                    : 'flex-col sm:flex-row sm:items-center'
+                }`}
+              >
+                <div className={`relative flex-1 ${isMobileLayout ? '' : 'max-w-md'}`}>
+                  <Search className="w-4 h-4 st-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Cari kegiatan, ID surat, nama/NIP pegawai, lokasi, atau nomor dasar..."
+                    className="w-full min-h-[44px] pl-9 pr-3 py-2 text-sm st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-xs st-text-muted font-mono-tabular">
+                  <span>
+                    Sheet {selectedYear}: {rows.length} di Sheets
+                    {selectedYear === '2026' && unsyncedMigrasiRows.length > 0
+                      ? ` · ${unsyncedMigrasiRows.length} migrasi lokal belum disinkron`
+                      : ''}
+                  </span>
+                </div>
               </div>
-              <div className="text-xs st-text-muted font-mono-tabular">
-                Sheet {selectedYear}: {filteredRows.length} data tercatat
-              </div>
+
+              {selectedYear === '2026' && unsyncedMigrasiRows.length > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                  <label className="inline-flex items-center gap-2 cursor-pointer st-text-secondary">
+                    <input
+                      type="checkbox"
+                      checked={includeUnsyncedMigrasi || query.trim().length > 0}
+                      disabled={query.trim().length > 0}
+                      onChange={(e) => setIncludeUnsyncedMigrasi(e.target.checked)}
+                      className="rounded border-slate-300 text-[#0B5D3B] focus:ring-[#0B5D3B]"
+                    />
+                    <span>
+                      Sertakan {unsyncedMigrasiRows.length} data awal ST 2026 lokal dalam daftar/pencarian Tracking Sheets
+                    </span>
+                  </label>
+                  <span className="st-text-muted font-mono-tabular">
+                    Menampilkan {visibleRows.length}/{filteredRows.length} baris
+                  </span>
+                </div>
+              )}
             </div>
 
             {isSyncing && rows.length === 0 ? (
@@ -633,73 +866,104 @@ export const TrackingSheetsManager: React.FC<TrackingSheetsManagerProps> = ({
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[680px] text-left border-collapse">
-                  <thead>
-                    <tr className="border-b st-border text-xs font-semibold st-text-secondary st-surface-muted">
-                      <th className="py-2.5 px-4 w-12 text-center">No</th>
-                      <th className="py-2.5 px-4">Kegiatan &amp; Dasar</th>
-                      <th className="py-2.5 px-4">Pegawai Berangkat</th>
-                      <th className="py-2.5 px-4">Tujuan &amp; Jadwal</th>
-                      <th className="py-2.5 px-4 text-right w-40">Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 night:divide-[#e4d5b3] dark:divide-slate-700/70 text-sm">
-                    {filteredRows.map((row, idx) => (
-                      <tr
-                        key={`${row.rowNumber}-${row.idSurat}`}
-                        className="hover:bg-slate-50/80 night:hover:bg-[#f5ecd5] dark:hover:bg-slate-800/60 transition-colors"
-                      >
-                        <td className="py-3 px-4 text-center text-xs st-text-muted font-mono-tabular align-top">
-                          {idx + 1}
-                        </td>
-                        <td className="py-3 px-4 align-top max-w-md">
-                          <div className="font-medium st-text-primary line-clamp-2">
-                            {row.namaKegiatan || '-'}
-                          </div>
-                          <div className="text-xs st-text-muted mt-1">
-                            {row.dasarAsal} ({row.dasarNomor})
-                          </div>
-                          <div className="text-[11px] st-text-muted mt-0.5 font-mono-tabular">
-                            {row.kriteria} · Diinput {row.waktuInput}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 align-top text-xs st-text-secondary whitespace-pre-line max-w-xs">
-                          {row.daftarPegawaiRingkas}
-                        </td>
-                        <td className="py-3 px-4 align-top text-xs st-text-secondary">
-                          <div className="font-medium st-text-primary">
-                            {row.lokasiTujuan || '-'}
-                          </div>
-                          <div className="font-mono-tabular st-text-muted mt-0.5">
-                            {row.tanggalMulai && row.tanggalMulai !== '-'
-                              ? formatTanggalIndo(row.tanggalMulai)
-                              : '-'}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 align-top text-right">
-                          {row.rawDraft ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onLoadTrackedDraft(row.rawDraft!, !isAdminMode)
-                              }
-                              className="min-h-[40px] inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-md transition-colors whitespace-nowrap shrink-0"
-                            >
-                              <FolderOpen className="w-3.5 h-3.5" />
-                              {isAdminMode ? 'Buka di Editor' : 'Salin ke Editor'}
-                            </button>
-                          ) : (
-                            <span className="text-[11px] st-text-muted">
-                              Hanya arsip tabel
-                            </span>
-                          )}
-                        </td>
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[680px] text-left border-collapse">
+                    <thead>
+                      <tr className="border-b st-border text-xs font-semibold st-text-secondary st-surface-muted">
+                        <th className="py-2.5 px-4 w-12 text-center">No</th>
+                        <th className="py-2.5 px-4">Kegiatan &amp; Dasar</th>
+                        <th className="py-2.5 px-4">Pegawai Berangkat</th>
+                        <th className="py-2.5 px-4">Tujuan &amp; Jadwal</th>
+                        <th className="py-2.5 px-4 text-right w-40">Aksi</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 night:divide-[#e4d5b3] dark:divide-slate-700/70 text-sm">
+                      {visibleRows.map((row, idx) => (
+                        <tr
+                          key={`${row.isLocalMigrasiOnly ? 'mig' : row.rowNumber}-${row.idSurat}-${idx}`}
+                          className="hover:bg-slate-50/80 night:hover:bg-[#f5ecd5] dark:hover:bg-slate-800/60 transition-colors"
+                        >
+                          <td className="py-3 px-4 text-center text-xs st-text-muted font-mono-tabular align-top">
+                            {idx + 1}
+                          </td>
+                          <td className="py-3 px-4 align-top max-w-md">
+                            <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
+                              <span className="text-[11px] font-mono-tabular st-text-muted">
+                                {row.idSurat}
+                              </span>
+                              {row.isLocalMigrasiOnly && (
+                                <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded border bg-sky-50 night:bg-[#efe3c4] dark:bg-sky-950/40 text-sky-800 night:text-[#5c4b37] dark:text-sky-300 border-sky-200 night:border-[#d3c096] dark:border-sky-800">
+                                  Migrasi Lokal · Belum di Sheets
+                                </span>
+                              )}
+                            </div>
+                            <div className="font-medium st-text-primary line-clamp-2">
+                              {row.namaKegiatan || '-'}
+                            </div>
+                            <div className="text-xs st-text-muted mt-1">
+                              {row.dasarAsal} ({row.dasarNomor})
+                            </div>
+                            <div className="text-[11px] st-text-muted mt-0.5 font-mono-tabular">
+                              {row.kriteria} · {row.waktuInput}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 align-top text-xs st-text-secondary whitespace-pre-line max-w-xs">
+                            {row.daftarPegawaiRingkas}
+                          </td>
+                          <td className="py-3 px-4 align-top text-xs st-text-secondary">
+                            <div className="font-medium st-text-primary">
+                              {row.lokasiTujuan || '-'}
+                            </div>
+                            <div className="font-mono-tabular st-text-muted mt-0.5">
+                              {row.tanggalMulai && row.tanggalMulai !== '-'
+                                ? formatTanggalIndo(row.tanggalMulai)
+                                : '-'}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 align-top text-right">
+                            {row.rawDraft ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onLoadTrackedDraft(row.rawDraft!, !isAdminMode)
+                                }
+                                className="min-h-[40px] inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#0B5D3B] dark:text-emerald-300 bg-emerald-50 night:bg-emerald-900/15 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-md transition-colors whitespace-nowrap shrink-0"
+                              >
+                                <FolderOpen className="w-3.5 h-3.5" />
+                                {isAdminMode ? 'Buka di Editor' : 'Salin ke Editor'}
+                              </button>
+                            ) : (
+                              <span className="text-[11px] st-text-muted">
+                                Hanya arsip tabel
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {filteredRows.length > visibleRows.length && (
+                  <div className="p-4 border-t st-border st-surface-muted flex flex-wrap items-center justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setVisibleRowCount((prev) => prev + TABLE_PAGE_SIZE)}
+                      className="min-h-[44px] px-4 py-2 text-xs font-semibold text-[#0B5D3B] dark:text-emerald-300 st-surface border rounded-lg hover:opacity-90 transition-colors"
+                    >
+                      Tampilkan {Math.min(TABLE_PAGE_SIZE, filteredRows.length - visibleRows.length)} Berikutnya
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVisibleRowCount(filteredRows.length)}
+                      className="min-h-[44px] px-4 py-2 text-xs font-medium st-text-secondary st-surface border rounded-lg hover:opacity-90 transition-colors"
+                    >
+                      Tampilkan Semua ({filteredRows.length.toLocaleString('id-ID')})
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </>

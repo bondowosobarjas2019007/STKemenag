@@ -1,4 +1,5 @@
-import { KriteriaKeberangkatan, SuratTugasData } from '../types/surat';
+import { ArsipSurat, KriteriaKeberangkatan, SuratTugasData } from '../types/surat';
+import { formatTanggalIndo } from '../utils/dateFormat';
 import { ADMIN_EMAIL, isAdminEmail } from './googleAuth';
 
 export const OWNER_GOOGLE_EMAIL = ADMIN_EMAIL;
@@ -185,6 +186,7 @@ export function getTrackedRowFingerprint(row: TrackedSuratRow): string {
 export interface DuplicateSuratMatch {
   row: TrackedSuratRow;
   matchedBy: 'id' | 'fingerprint' | 'both';
+  source?: 'sheets' | 'local_tercatat';
 }
 
 export function findDuplicateTrackedRow(
@@ -201,9 +203,85 @@ export function findDuplicateTrackedRow(
       return {
         row,
         matchedBy: idMatch && fpMatch ? 'both' : idMatch ? 'id' : 'fingerprint',
+        source: 'sheets',
       };
     }
   }
+  return null;
+}
+
+export function findDuplicateSuratAcrossSources(
+  surat: SuratTugasData,
+  sheetRows: TrackedSuratRow[],
+  localArchive: ArsipSurat[],
+  extraMigrasiItems: SuratTugasData[] = []
+): DuplicateSuratMatch | null {
+  const liveMatch = findDuplicateTrackedRow(surat, sheetRows);
+  if (liveMatch) return liveMatch;
+
+  const targetId = (surat.id || '').trim();
+  const targetFp = generateSuratFingerprint(surat);
+
+  const toLocalTrackedRow = (draft: SuratTugasData): TrackedSuratRow => {
+    const validPegawai = draft.pegawaiList.filter(
+      (p) => p.nama.trim() || p.nip.trim()
+    );
+    const pegawaiSummary = validPegawai
+      .map((p, i) => `${i + 1}. ${p.nama || '-'}${p.nip ? ` (${p.nip})` : ''}`)
+      .join('\n');
+    const waktuLabel = draft.statusSurat?.toLowerCase().includes('migrasi')
+      ? `${formatTanggalIndo(draft.tanggalNaskah)} (${draft.statusSurat})`
+      : `${formatTanggalIndo(draft.tanggalNaskah)} (Arsip Tercatat Lokal)`;
+
+    return {
+      rowNumber: 0,
+      idSurat: draft.id,
+      waktuInput: waktuLabel,
+      nomorSurat: draft.modeSrikandi
+        ? '${nomor_naskah} (Srikandi)'
+        : draft.nomorSurat || '-',
+      tanggalSurat: draft.tanggalNaskah || '-',
+      kriteria: KRITERIA_TEXT[draft.kriteria],
+      dasarAsal: draft.dasarAsal || '-',
+      dasarNomor: draft.dasarNomor || '-',
+      dasarTanggal: draft.dasarTanggal || '-',
+      namaKegiatan: draft.namaKegiatan || '-',
+      lokasiTujuan: draft.lokasiTujuan || '-',
+      tanggalMulai: draft.tanggalMulai || '-',
+      tanggalSelesai: draft.tanggalSelesai || '-',
+      jumlahPegawai: validPegawai.length,
+      daftarPegawaiRingkas:
+        pegawaiSummary || (draft.kriteria === 'terlampir' ? 'Terlampir' : '-'),
+      penandatangan: draft.namaPenandatangan || 'Kepala Kantor',
+      rawDraft: draft,
+    };
+  };
+
+  for (const item of localArchive) {
+    if (item.status !== 'Tercatat') continue;
+    const idMatch = Boolean(targetId && (item.data.id || '').trim() === targetId);
+    const fpMatch = generateSuratFingerprint(item.data) === targetFp;
+    if (idMatch || fpMatch) {
+      return {
+        row: toLocalTrackedRow(item.data),
+        matchedBy: idMatch && fpMatch ? 'both' : idMatch ? 'id' : 'fingerprint',
+        source: 'local_tercatat',
+      };
+    }
+  }
+
+  for (const seed of extraMigrasiItems) {
+    const idMatch = Boolean(targetId && (seed.id || '').trim() === targetId);
+    const fpMatch = generateSuratFingerprint(seed) === targetFp;
+    if (idMatch || fpMatch) {
+      return {
+        row: toLocalTrackedRow(seed),
+        matchedBy: idMatch && fpMatch ? 'both' : idMatch ? 'id' : 'fingerprint',
+        source: 'local_tercatat',
+      };
+    }
+  }
+
   return null;
 }
 
@@ -465,12 +543,20 @@ export async function fetchRowsForSheet(
 
 function buildRowValues(
   rowNumberDisplay: number,
-  surat: SuratTugasData
+  surat: SuratTugasData,
+  waktuInputOverride?: string
 ): (string | number)[] {
-  const nowStr = new Date().toLocaleString('id-ID', {
-    dateStyle: 'short',
-    timeStyle: 'short',
-  });
+  const isMigrasi = Boolean(
+    surat.statusSurat && surat.statusSurat.toLowerCase().includes('migrasi')
+  );
+  const defaultWaktu = isMigrasi
+    ? `${formatTanggalIndo(surat.tanggalNaskah)} (${surat.statusSurat})`
+    : new Date().toLocaleString('id-ID', {
+        dateStyle: 'short',
+        timeStyle: 'short',
+      });
+  const waktuInput = waktuInputOverride || defaultWaktu;
+
   const validPegawai = surat.pegawaiList.filter(
     (p) => p.nama.trim() || p.nip.trim()
   );
@@ -490,7 +576,7 @@ function buildRowValues(
   return [
     rowNumberDisplay,
     surat.id,
-    nowStr,
+    waktuInput,
     nomorTampil,
     surat.tanggalNaskah || '-',
     KRITERIA_TEXT[surat.kriteria],
@@ -502,7 +588,7 @@ function buildRowValues(
     surat.tanggalMulai || '-',
     surat.tanggalSelesai || '-',
     validPegawai.length,
-    pegawaiSummary || '-',
+    pegawaiSummary || (surat.kriteria === 'terlampir' ? 'Terlampir' : '-'),
     surat.namaPenandatangan || 'Kepala Kantor',
     JSON.stringify(payloadDraft),
   ];
@@ -576,6 +662,206 @@ export async function updateExistingSuratRow(
       }),
     }
   );
+}
+
+export async function appendBatchSuratToYearSheet(
+  spreadsheetId: string,
+  year: string,
+  startRowNumberDisplay: number,
+  suratList: SuratTugasData[],
+  accessToken: string
+): Promise<void> {
+  if (suratList.length === 0) return;
+  const escaped = `'${year.replace(/'/g, "''")}'`;
+  const values = suratList.map((item, idx) =>
+    buildRowValues(startRowNumberDisplay + idx, item)
+  );
+
+  await googleFetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(
+      spreadsheetId
+    )}/values/${encodeURIComponent(`${escaped}!A:Q`)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    accessToken,
+    {
+      method: 'POST',
+      body: JSON.stringify({ values }),
+    }
+  );
+}
+
+export interface MigrasiBatchSyncProgress {
+  phase: 'preparing' | 'checking' | 'syncing' | 'done' | 'error';
+  currentBatch: number;
+  totalBatches: number;
+  processed: number;
+  totalPending: number;
+  inserted: number;
+  skipped: number;
+  totalSource: number;
+  message: string;
+}
+
+export async function syncMigrasiDatasetToSheets(params: {
+  spreadsheetId: string;
+  year: string;
+  items: SuratTugasData[];
+  accessToken: string;
+  batchSize?: number;
+  onProgress?: (progress: MigrasiBatchSyncProgress) => void;
+}): Promise<{
+  summary: SpreadsheetSummary;
+  inserted: number;
+  skipped: number;
+  totalSource: number;
+}> {
+  const {
+    spreadsheetId,
+    year,
+    items,
+    accessToken,
+    batchSize = 25,
+    onProgress,
+  } = params;
+
+  onProgress?.({
+    phase: 'preparing',
+    currentBatch: 0,
+    totalBatches: 0,
+    processed: 0,
+    totalPending: 0,
+    inserted: 0,
+    skipped: 0,
+    totalSource: items.length,
+    message: `Memastikan sheet tahun ${year} siap...`,
+  });
+
+  const { summary } = await ensureYearSheet(spreadsheetId, year, accessToken);
+
+  onProgress?.({
+    phase: 'checking',
+    currentBatch: 0,
+    totalBatches: 0,
+    processed: 0,
+    totalPending: 0,
+    inserted: 0,
+    skipped: 0,
+    totalSource: items.length,
+    message: `Memeriksa data yang sudah tercatat di Sheet ${year}...`,
+  });
+
+  const existingRows = await fetchRowsForSheet(
+    summary.spreadsheetId,
+    year,
+    accessToken
+  );
+
+  const existingIds = new Set(
+    existingRows.map((r) => r.idSurat.trim()).filter(Boolean)
+  );
+  const existingFingerprints = new Set(
+    existingRows.map((r) => getTrackedRowFingerprint(r)).filter(Boolean)
+  );
+
+  const pendingItems: SuratTugasData[] = [];
+  let skipped = 0;
+
+  for (const item of items) {
+    const id = (item.id || '').trim();
+    const fp = generateSuratFingerprint(item);
+    if ((id && existingIds.has(id)) || (fp && existingFingerprints.has(fp))) {
+      skipped += 1;
+      continue;
+    }
+    if (id) existingIds.add(id);
+    pendingItems.push(item);
+  }
+
+  if (pendingItems.length === 0) {
+    onProgress?.({
+      phase: 'done',
+      currentBatch: 0,
+      totalBatches: 0,
+      processed: 0,
+      totalPending: 0,
+      inserted: 0,
+      skipped,
+      totalSource: items.length,
+      message: `Seluruh ${items.length} data awal sudah tercatat di Sheet ${year} (${skipped} dilewati karena sudah ada).`,
+    });
+    return {
+      summary,
+      inserted: 0,
+      skipped,
+      totalSource: items.length,
+    };
+  }
+
+  const totalBatches = Math.ceil(pendingItems.length / batchSize);
+  let nextRowNumberDisplay = existingRows.length + 1;
+  let inserted = 0;
+
+  for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
+    const start = batchIdx * batchSize;
+    const batch = pendingItems.slice(start, start + batchSize);
+
+    onProgress?.({
+      phase: 'syncing',
+      currentBatch: batchIdx + 1,
+      totalBatches,
+      processed: start,
+      totalPending: pendingItems.length,
+      inserted,
+      skipped,
+      totalSource: items.length,
+      message: `Mengirim batch ${batchIdx + 1}/${totalBatches} (${batch.length} baris ke Sheet ${year})...`,
+    });
+
+    await appendBatchSuratToYearSheet(
+      summary.spreadsheetId,
+      year,
+      nextRowNumberDisplay,
+      batch,
+      accessToken
+    );
+
+    nextRowNumberDisplay += batch.length;
+    inserted += batch.length;
+
+    onProgress?.({
+      phase: 'syncing',
+      currentBatch: batchIdx + 1,
+      totalBatches,
+      processed: inserted,
+      totalPending: pendingItems.length,
+      inserted,
+      skipped,
+      totalSource: items.length,
+      message: `Batch ${batchIdx + 1}/${totalBatches} tersimpan (${inserted}/${pendingItems.length} data baru).`,
+    });
+
+    if (batchIdx < totalBatches - 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 350));
+    }
+  }
+
+  onProgress?.({
+    phase: 'done',
+    currentBatch: totalBatches,
+    totalBatches,
+    processed: inserted,
+    totalPending: pendingItems.length,
+    inserted,
+    skipped,
+    totalSource: items.length,
+    message: `Sinkronisasi selesai: ${inserted} data baru ditambahkan ke Sheet ${year}, ${skipped} data duplikat dilewati.`,
+  });
+
+  return {
+    summary,
+    inserted,
+    skipped,
+    totalSource: items.length,
+  };
 }
 
 /**
@@ -895,7 +1181,7 @@ export async function ensureBridgeYearSheet(
 export async function upsertSuratViaBridge(
   year: string,
   surat: SuratTugasData,
-  overwriteConfirmed: boolean,
+  overwriteConfirmed = true,
   customWebhookUrl?: string
 ): Promise<BridgeUpsertResponse> {
   const normalizedSurat: SuratTugasData = {
@@ -914,7 +1200,7 @@ export async function upsertSuratViaBridge(
         suratId: normalizedSurat.id,
         status: normalizedSurat.statusSurat,
         rowValues,
-        overwriteConfirmed,
+        overwriteConfirmed: overwriteConfirmed !== false,
       }),
     });
   } catch (err) {

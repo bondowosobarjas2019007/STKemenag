@@ -167,7 +167,8 @@ export async function handleRelayPost(
       year,
       suratId: payload.suratId,
       rowValues: payload.rowValues,
-      overwriteConfirmed: Boolean(payload.overwriteConfirmed),
+      overwriteConfirmed:
+        action === 'upsert' ? payload.overwriteConfirmed !== false : Boolean(payload.overwriteConfirmed),
     }),
     signal: AbortSignal.timeout(25000),
   });
