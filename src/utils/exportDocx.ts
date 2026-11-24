@@ -13,7 +13,12 @@ import {
   VerticalAlign,
   WidthType,
 } from 'docx';
-import { KOP_VARIAN_OPTIONS, Pegawai, SuratTugasData } from '../types/surat';
+import {
+  KOP_VARIAN_OPTIONS,
+  Pegawai,
+  resolveKopSurat,
+  SuratTugasData,
+} from '../types/surat';
 import {
   formatRentangHariTanggal,
   formatRentangTanggal,
@@ -170,7 +175,7 @@ export function createKopSuratTable(
   data: SuratTugasData,
   logoBytes: Uint8Array | null
 ): Table {
-  const kop = KOP_VARIAN_OPTIONS[data.kopVarian] ?? KOP_VARIAN_OPTIONS.telepon;
+  const { kontakBaris, websiteEmailBaris } = resolveKopSurat(data);
   return new Table({
     width: { size: 10000, type: WidthType.DXA },
     borders: {
@@ -231,13 +236,13 @@ export function createKopSuratTable(
               }),
               new Paragraph({
                 alignment: AlignmentType.CENTER,
-                children: [run(kop.kontakBaris, { size: 18 })],
+                children: [run(kontakBaris, { size: 18 })],
               }),
               new Paragraph({
                 alignment: AlignmentType.CENTER,
                 spacing: { after: 100 },
                 children: [
-                  run(`Website: jember.kemenag.go.id; E-mail: ${kop.email}`, {
+                  run(websiteEmailBaris, {
                     size: 18,
                     italics: true,
                   }),

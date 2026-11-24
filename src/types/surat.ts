@@ -1,6 +1,6 @@
 export type KriteriaKeberangkatan = 'sendiri' | 'tiga_orang' | 'terlampir';
 
-export type KopVarianId = 'telepon' | 'whatsapp';
+export type KopVarianId = 'whatsapp' | 'manual' | 'telepon';
 
 export interface KopVarian {
   id: KopVarianId;
@@ -24,6 +24,9 @@ export interface SuratTugasData {
   nomorSurat: string;
   tanggalNaskah: string; // YYYY-MM-DD
   kopVarian: KopVarianId;
+  kopCustomText?: string;
+  kopCustomKontak?: string;
+  kopCustomEmail?: string;
 
   // Dasar Surat Tugas
   dasarAsal: string;
@@ -56,20 +59,69 @@ export interface ArsipSurat {
   data: SuratTugasData;
 }
 
-export const KOP_VARIAN_OPTIONS: Record<KopVarianId, KopVarian> = {
-  telepon: {
-    id: 'telepon',
-    label: 'Telepon (0331) 486008 · kabjember@kemenag.go.id',
-    kontakBaris: 'Telepon (0331) 486008',
-    email: 'kabjember@kemenag.go.id',
-  },
+export const KOP_VARIAN_OPTIONS: Record<'whatsapp' | 'manual', KopVarian> = {
   whatsapp: {
     id: 'whatsapp',
     label: 'WhatsApp Center: 0811 365 6262 · kemenagjember@gmail.com',
     kontakBaris: 'WhatsApp Center: 0811 365 6262',
     email: 'kemenagjember@gmail.com',
   },
+  manual: {
+    id: 'manual',
+    label: 'Isi Manual...',
+    kontakBaris: 'WhatsApp Center: 0811 365 6262',
+    email: 'kemenagjember@gmail.com',
+  },
 };
+
+export function resolveKopSurat(data: SuratTugasData): {
+  kontakBaris: string;
+  websiteEmailBaris: string;
+} {
+  if (data.kopVarian === 'manual') {
+    const rawKontak = (data.kopCustomKontak ?? '').trim();
+    const rawEmail = (data.kopCustomEmail ?? '').trim();
+    const rawText = (data.kopCustomText ?? '').trim();
+
+    let kontakBaris = rawKontak;
+    let websiteEmailBaris = rawEmail;
+
+    if (!kontakBaris && !websiteEmailBaris && rawText) {
+      const parts = rawText.split('\n').map((p) => p.trim()).filter(Boolean);
+      kontakBaris = parts[0] || '';
+      websiteEmailBaris = parts[1] || '';
+    }
+
+    if (!kontakBaris) {
+      kontakBaris = 'WhatsApp Center: 0811 365 6262';
+    }
+
+    if (!websiteEmailBaris) {
+      websiteEmailBaris = 'Website: jember.kemenag.go.id; E-mail: kemenagjember@gmail.com';
+    } else if (!websiteEmailBaris.toLowerCase().startsWith('website:')) {
+      if (
+        websiteEmailBaris.toLowerCase().startsWith('e-mail:') ||
+        websiteEmailBaris.toLowerCase().startsWith('email:')
+      ) {
+        websiteEmailBaris = `Website: jember.kemenag.go.id; ${websiteEmailBaris}`;
+      } else {
+        websiteEmailBaris = `Website: jember.kemenag.go.id; E-mail: ${websiteEmailBaris}`;
+      }
+    }
+
+    return {
+      kontakBaris,
+      websiteEmailBaris,
+    };
+  }
+
+  // Default whatsapp (and fallback if 'telepon' from legacy data)
+  const defaultKop = KOP_VARIAN_OPTIONS.whatsapp;
+  return {
+    kontakBaris: defaultKop.kontakBaris,
+    websiteEmailBaris: `Website: jember.kemenag.go.id; E-mail: ${defaultKop.email}`,
+  };
+}
 
 import dukPegawaiData from '../data/dukPegawai.json';
 
@@ -120,7 +172,7 @@ export const SAMPLE_TEMPLATES: Record<KriteriaKeberangkatan, SuratTugasData> = {
     modeSrikandi: true,
     nomorSurat: 'B-1024/Kk.13.32.01/KP.01/11/2026',
     tanggalNaskah: '2026-11-16',
-    kopVarian: 'telepon',
+    kopVarian: 'whatsapp',
     dasarAsal: 'Surat dari Gereja Katolik Paroki "Santo Paulus" Ambulu',
     dasarNomor: '081 / PSP / XI / 2026',
     dasarTanggal: '2026-11-16',
@@ -148,7 +200,7 @@ export const SAMPLE_TEMPLATES: Record<KriteriaKeberangkatan, SuratTugasData> = {
     modeSrikandi: true,
     nomorSurat: 'B-1025/Kk.13.32.01/KP.01/11/2026',
     tanggalNaskah: '2026-11-16',
-    kopVarian: 'telepon',
+    kopVarian: 'whatsapp',
     dasarAsal: 'Surat dari Kepala Kantor Wilayah Kementerian Agama Provinsi Jawa Timur',
     dasarNomor: '1134/Kw.13.02/PP.02.3/11/2026',
     dasarTanggal: '2026-11-09',
@@ -257,7 +309,10 @@ export function createEmptyDraft(
     modeSrikandi: true,
     nomorSurat: '',
     tanggalNaskah: today,
-    kopVarian: 'telepon',
+    kopVarian: 'whatsapp',
+    kopCustomKontak: 'WhatsApp Center: 0811 365 6262',
+    kopCustomEmail: 'Website: jember.kemenag.go.id; E-mail: kemenagjember@gmail.com',
+    kopCustomText: '',
     dasarAsal: '',
     dasarNomor: '',
     dasarTanggal: today,

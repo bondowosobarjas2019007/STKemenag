@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   KOP_VARIAN_OPTIONS,
   Pegawai,
+  resolveKopSurat,
   SuratTugasData,
 } from '../types/surat';
 import {
@@ -139,7 +140,7 @@ export const SuratPreview: React.FC<SuratPreviewProps> = ({
     return () => observer.disconnect();
   }, [data.kriteria, data.pegawaiList.length]);
 
-  const kop = KOP_VARIAN_OPTIONS[data.kopVarian] ?? KOP_VARIAN_OPTIONS.telepon;
+  const { kontakBaris, websiteEmailBaris } = resolveKopSurat(data);
   const nomorDisplay = data.modeSrikandi
     ? '${nomor_naskah}'
     : data.nomorSurat.trim() || '-';
@@ -234,10 +235,8 @@ export const SuratPreview: React.FC<SuratPreviewProps> = ({
               <div className="text-[9pt] mt-0.5">
                 Jalan KH. Wahid Hasyim Nomor.01 Jember, 68137
               </div>
-              <div className="text-[9pt]">{kop.kontakBaris}</div>
-              <div className="text-[9pt] italic">
-                Website: jember.kemenag.go.id; E-mail: {kop.email}
-              </div>
+              <div className="text-[9pt]">{kontakBaris}</div>
+              <div className="text-[9pt] italic">{websiteEmailBaris}</div>
             </div>
           </div>
 

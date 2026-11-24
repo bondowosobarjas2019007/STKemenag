@@ -189,7 +189,7 @@ export function mapMigrasiItemToSuratTugas(
     modeSrikandi: true,
     nomorSurat: '',
     tanggalNaskah,
-    kopVarian: 'telepon',
+    kopVarian: 'whatsapp',
     dasarAsal: (raw.dasarAsal || '').trim(),
     dasarNomor: (raw.dasarNomor || '').trim(),
     dasarTanggal,

@@ -1312,6 +1312,9 @@ export default function App() {
       namaPenandatangan:
         current.namaPenandatangan || baseBlank.namaPenandatangan,
       kopVarian: current.kopVarian || baseBlank.kopVarian,
+      kopCustomKontak: current.kopCustomKontak ?? baseBlank.kopCustomKontak,
+      kopCustomEmail: current.kopCustomEmail ?? baseBlank.kopCustomEmail,
+      kopCustomText: current.kopCustomText ?? baseBlank.kopCustomText,
       modeSrikandi: current.modeSrikandi,
     };
 
@@ -3379,13 +3382,16 @@ export default function App() {
                       Varian Kontak Kop Surat
                     </label>
                     <select
-                      value={surat.kopVarian}
-                      onChange={(e) =>
+                      value={surat.kopVarian === 'manual' ? 'manual' : 'whatsapp'}
+                      onChange={(e) => {
+                        const nextVarian = e.target.value as KopVarianId;
                         setSurat((prev) => ({
                           ...prev,
-                          kopVarian: e.target.value as KopVarianId,
-                        }))
-                      }
+                          kopVarian: nextVarian,
+                          kopCustomKontak: prev.kopCustomKontak || 'WhatsApp Center: 0811 365 6262',
+                          kopCustomEmail: prev.kopCustomEmail || 'Website: jember.kemenag.go.id; E-mail: kemenagjember@gmail.com',
+                        }));
+                      }}
                       className="w-full px-3 py-2 text-xs st-input border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
                     >
                       {Object.values(KOP_VARIAN_OPTIONS).map((opt) => (
@@ -3394,6 +3400,69 @@ export default function App() {
                         </option>
                       ))}
                     </select>
+
+                    {surat.kopVarian === 'manual' && (
+                      <div className="mt-2.5 p-3 rounded-lg border border-emerald-200/80 dark:border-emerald-800/40 bg-emerald-50/40 night:bg-emerald-950/20 dark:bg-emerald-950/30 space-y-2.5">
+                        <div className="flex items-center justify-between text-[11px] font-semibold text-[#0B5D3B] dark:text-emerald-300">
+                          <span>Pengaturan Kontak Manual Kop Surat:</span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSurat((prev) => ({
+                                ...prev,
+                                kopCustomKontak: 'WhatsApp Center: 0811 365 6262',
+                                kopCustomEmail: 'Website: jember.kemenag.go.id; E-mail: kemenagjember@gmail.com',
+                                kopCustomText: 'WhatsApp Center: 0811 365 6262\nWebsite: jember.kemenag.go.id; E-mail: kemenagjember@gmail.com',
+                              }))
+                            }
+                            className="text-[10px] text-slate-500 hover:text-emerald-700 dark:hover:text-emerald-300 underline font-normal"
+                          >
+                            Reset Default
+                          </button>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-medium st-text-secondary mb-1">
+                            Baris Kontak 1 (WhatsApp / Telepon)
+                          </label>
+                          <input
+                            type="text"
+                            value={surat.kopCustomKontak ?? 'WhatsApp Center: 0811 365 6262'}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setSurat((prev) => ({
+                                ...prev,
+                                kopCustomKontak: val,
+                                kopCustomText: `${val}\n${prev.kopCustomEmail ?? 'Website: jember.kemenag.go.id; E-mail: kemenagjember@gmail.com'}`,
+                              }));
+                            }}
+                            placeholder="WhatsApp Center: 0811 365 6262"
+                            className="w-full px-3 py-1.5 text-xs st-input border rounded-md focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-medium st-text-secondary mb-1">
+                            Baris Website / E-mail
+                          </label>
+                          <input
+                            type="text"
+                            value={surat.kopCustomEmail ?? 'Website: jember.kemenag.go.id; E-mail: kemenagjember@gmail.com'}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setSurat((prev) => ({
+                                ...prev,
+                                kopCustomEmail: val,
+                                kopCustomText: `${prev.kopCustomKontak ?? 'WhatsApp Center: 0811 365 6262'}\n${val}`,
+                              }));
+                            }}
+                            placeholder="Website: jember.kemenag.go.id; E-mail: kemenagjember@gmail.com"
+                            className="w-full px-3 py-1.5 text-xs st-input border rounded-md focus:outline-none focus:ring-2 focus:ring-[#0B5D3B]/20 focus:border-[#0B5D3B]"
+                          />
+                        </div>
+                        <p className="text-[10.5px] st-text-muted italic leading-tight">
+                          Perubahan teks di atas langsung diterapkan pada kop surat di pratinjau dan hasil unduh (.docx / .pdf).
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
