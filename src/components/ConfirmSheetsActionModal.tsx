@@ -357,3 +357,160 @@ export const SheetsAuthPromptModal: React.FC<SheetsAuthPromptModalProps> = ({
     </div>
   );
 };
+
+interface DuplicateSuratWarningModalProps {
+  isOpen: boolean;
+  waktuInputSebelumnya: string;
+  rowNumber: number;
+  targetYear: string;
+  namaKegiatan: string;
+  matchedBy: 'id' | 'fingerprint' | 'both';
+  busyAction: 'download_only' | 'overwrite' | 'save_new' | null;
+  errorMessage: string | null;
+  onDownloadOnly: () => void;
+  onOverwriteOld: () => void;
+  onSaveAsNew: () => void;
+  onCancel: () => void;
+}
+
+export const DuplicateSuratWarningModal: React.FC<
+  DuplicateSuratWarningModalProps
+> = ({
+  isOpen,
+  waktuInputSebelumnya,
+  rowNumber,
+  targetYear,
+  namaKegiatan,
+  matchedBy,
+  busyAction,
+  errorMessage,
+  onDownloadOnly,
+  onOverwriteOld,
+  onSaveAsNew,
+  onCancel,
+}) => {
+  const { isMobileLayout, isForcedMobile } = useViewport();
+  if (!isOpen) return null;
+
+  const isBusy = busyAction !== null;
+
+  return (
+    <div
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 no-print ${
+        isMobileLayout ? 'p-0' : 'p-4'
+      } ${isForcedMobile ? 'max-w-[430px] mx-auto' : ''}`}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Surat Tugas Serupa Sudah Tercatat"
+    >
+      <div
+        className={`w-full st-surface overflow-hidden flex flex-col ${
+          isMobileLayout
+            ? 'h-full rounded-none border-0'
+            : 'max-w-lg border rounded-xl shadow-xl'
+        }`}
+      >
+        <div className="flex items-center justify-between px-4 sm:px-5 py-3.5 border-b st-border bg-amber-50/70 night:bg-[#f5ecd5] dark:bg-amber-950/35 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+            <h2 className="text-sm font-semibold st-text-primary truncate">
+              Surat Tugas Serupa Sudah Tercatat
+            </h2>
+          </div>
+          <button
+            type="button"
+            disabled={isBusy}
+            onClick={onCancel}
+            className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center st-text-muted hover:text-slate-700 dark:hover:text-slate-200 rounded-lg disabled:opacity-40 shrink-0"
+            aria-label="Tutup peringatan duplikasi"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 text-xs st-text-secondary space-y-3 leading-relaxed">
+          <p className="st-text-primary text-[13px] leading-relaxed">
+            Ditemukan surat tugas yang sama persis di Worksheet (diinput pada{' '}
+            <span className="font-mono-tabular font-semibold">
+              {waktuInputSebelumnya || '-'}
+            </span>
+            ). Apa yang ingin Anda lakukan?
+          </p>
+
+          <div className="p-3 st-surface-muted border rounded-lg space-y-1">
+            <div className="text-[11px] font-medium st-text-muted">
+              Sheet {targetYear} · Baris {rowNumber} ·{' '}
+              {matchedBy === 'both'
+                ? 'ID Surat & isi identik'
+                : matchedBy === 'id'
+                  ? 'Referensi ID Surat sama'
+                  : 'Dasar, kegiatan, pegawai & tanggal identik'}
+            </div>
+            <div className="st-text-primary font-medium line-clamp-2">
+              {namaKegiatan || 'Surat Tugas Kemenag Jember'}
+            </div>
+          </div>
+
+          {errorMessage && (
+            <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/70 rounded-lg text-red-900 dark:text-red-200 text-xs">
+              {errorMessage}
+            </div>
+          )}
+        </div>
+
+        <div className="px-4 sm:px-5 py-3.5 st-surface-muted border-t st-border flex flex-col gap-2 shrink-0">
+          <button
+            type="button"
+            disabled={isBusy}
+            onClick={onDownloadOnly}
+            className="w-full min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] disabled:opacity-60 transition-colors"
+          >
+            {busyAction === 'download_only' ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Mengunduh .docx...
+              </>
+            ) : (
+              <>
+                <Download className="w-4 h-4" />
+                Unduh .docx Saja (Jangan Catat Ulang)
+              </>
+            )}
+          </button>
+
+          <button
+            type="button"
+            disabled={isBusy}
+            onClick={onOverwriteOld}
+            className="w-full min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold text-amber-900 dark:text-amber-200 bg-amber-100/80 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-700 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/60 disabled:opacity-60 transition-colors"
+          >
+            {busyAction === 'overwrite' ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Memperbarui Data Lama...
+              </>
+            ) : (
+              'Perbarui Data Lama (Timpa)'
+            )}
+          </button>
+
+          <button
+            type="button"
+            disabled={isBusy}
+            onClick={onSaveAsNew}
+            className="w-full min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2 text-xs font-medium st-text-primary st-surface border rounded-lg hover:opacity-90 disabled:opacity-60 transition-colors"
+          >
+            {busyAction === 'save_new' ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Menyimpan sebagai Data Baru...
+              </>
+            ) : (
+              'Tetap Simpan sebagai Data Baru'
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};

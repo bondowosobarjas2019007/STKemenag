@@ -28,6 +28,13 @@ const NO_BORDER = {
   right: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
 };
 
+const KOP_DOUBLE_BOTTOM_BORDER = {
+  top: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+  left: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+  right: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+  bottom: { style: BorderStyle.DOUBLE, size: 20, color: '000000' },
+};
+
 const SOLID_BORDER = {
   top: { style: BorderStyle.SINGLE, size: 6, color: '000000' },
   bottom: { style: BorderStyle.SINGLE, size: 6, color: '000000' },
@@ -107,23 +114,27 @@ function buildSignatureParagraphs(
   const indentLeft = 5200;
   return [
     new Paragraph({
+      alignment: AlignmentType.LEFT,
       indent: { left: indentLeft },
       spacing: { before: 280, after: 0 },
       children: [run(`Jember, ${tanggalDisplay}`)],
     }),
     new Paragraph({
+      alignment: AlignmentType.LEFT,
       indent: { left: indentLeft },
       spacing: { after: 360 },
       children: [run(jabatanPenandatangan || 'Kepala Kantor')],
     }),
     new Paragraph({
+      alignment: AlignmentType.LEFT,
       indent: { left: indentLeft },
       spacing: { after: 360 },
       children: [run(modeSrikandi ? '${ttd_pengirim}' : '')],
     }),
     new Paragraph({
+      alignment: AlignmentType.LEFT,
       indent: { left: indentLeft },
-      spacing: { after: 240 },
+      spacing: { after: 280 },
       children: [
         run(modeSrikandi ? '${nama_pengirim}' : namaPenandatangan || 'Kepala Kantor'),
       ],
@@ -135,7 +146,7 @@ function buildAntiGratifikasiParagraphs(): Paragraph[] {
   return [
     new Paragraph({
       alignment: AlignmentType.CENTER,
-      spacing: { before: 300, after: 0 },
+      spacing: { before: 320, after: 0 },
       children: [
         run('SELURUH ASN DAN PETUGAS DI KANTOR KEMENTERIAN AGAMA KABUPATEN JEMBER', {
           bold: true,
@@ -195,14 +206,14 @@ export async function exportSuratTugasDocx(data: SuratTugasData): Promise<void> 
       right: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
       insideHorizontal: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
       insideVertical: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
-      bottom: { style: BorderStyle.SINGLE, size: 12, color: '000000' },
+      bottom: { style: BorderStyle.DOUBLE, size: 20, color: '000000' },
     },
     rows: [
       new TableRow({
         children: [
           new TableCell({
             width: { size: 1500, type: WidthType.DXA },
-            borders: NO_BORDER,
+            borders: KOP_DOUBLE_BOTTOM_BORDER,
             verticalAlign: VerticalAlign.CENTER,
             children: [
               new Paragraph({
@@ -221,7 +232,7 @@ export async function exportSuratTugasDocx(data: SuratTugasData): Promise<void> 
           }),
           new TableCell({
             width: { size: 8500, type: WidthType.DXA },
-            borders: NO_BORDER,
+            borders: KOP_DOUBLE_BOTTOM_BORDER,
             verticalAlign: VerticalAlign.CENTER,
             children: [
               new Paragraph({
@@ -251,7 +262,7 @@ export async function exportSuratTugasDocx(data: SuratTugasData): Promise<void> 
               }),
               new Paragraph({
                 alignment: AlignmentType.CENTER,
-                spacing: { after: 80 },
+                spacing: { after: 100 },
                 children: [
                   run(`Website: jember.kemenag.go.id; E-mail: ${kop.email}`, {
                     size: 18,
@@ -492,7 +503,7 @@ export async function exportSuratTugasDocx(data: SuratTugasData): Promise<void> 
     kopTable,
     new Paragraph({
       alignment: AlignmentType.CENTER,
-      spacing: { before: 220, after: 40 },
+      spacing: { before: 200, after: 40 },
       children: [run('SURAT TUGAS', { bold: true, size: 24 })],
     }),
     new Paragraph({

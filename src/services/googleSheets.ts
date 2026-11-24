@@ -115,6 +115,98 @@ export function getTargetYearForSurat(surat: SuratTugasData): string {
   return String(new Date().getFullYear());
 }
 
+export function getValidSheetLocale(): string {
+  const lang =
+    typeof navigator !== 'undefined'
+      ? (navigator.language || 'id').toLowerCase()
+      : 'id';
+
+  if (lang.startsWith('id')) {
+    return 'id';
+  }
+  if (lang.startsWith('en')) {
+    return 'en';
+  }
+  return 'id';
+}
+
+function normalizeFingerprintPart(val?: string | null): string {
+  return (val || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+export function generateSuratFingerprint(surat: SuratTugasData): string {
+  const dasar = [
+    normalizeFingerprintPart(surat.dasarAsal),
+    normalizeFingerprintPart(surat.dasarNomor),
+    normalizeFingerprintPart(surat.dasarTanggal),
+  ].join('|');
+
+  const kegiatan = normalizeFingerprintPart(surat.namaKegiatan);
+
+  const nipList = surat.pegawaiList
+    .map(
+      (p) =>
+        normalizeFingerprintPart(p.nip) || normalizeFingerprintPart(p.nama)
+    )
+    .filter(Boolean)
+    .sort();
+
+  const tanggalPelaksanaan = [
+    normalizeFingerprintPart(surat.tanggalMulai),
+    normalizeFingerprintPart(surat.tanggalSelesai),
+  ].join('|');
+
+  return `${dasar}||${kegiatan}||${nipList.join(',')}||${tanggalPelaksanaan}`;
+}
+
+export function getTrackedRowFingerprint(row: TrackedSuratRow): string {
+  if (row.rawDraft) {
+    return generateSuratFingerprint(row.rawDraft);
+  }
+  const dasar = [
+    normalizeFingerprintPart(row.dasarAsal),
+    normalizeFingerprintPart(row.dasarNomor),
+    normalizeFingerprintPart(row.dasarTanggal),
+  ].join('|');
+  const kegiatan = normalizeFingerprintPart(row.namaKegiatan);
+  const nipMatches = Array.from(
+    (row.daftarPegawaiRingkas || '').matchAll(/\(([^)]+)\)/g)
+  )
+    .map((m) => normalizeFingerprintPart(m[1]))
+    .filter(Boolean)
+    .sort();
+  const tanggalPelaksanaan = [
+    normalizeFingerprintPart(row.tanggalMulai),
+    normalizeFingerprintPart(row.tanggalSelesai),
+  ].join('|');
+  return `${dasar}||${kegiatan}||${nipMatches.join(',')}||${tanggalPelaksanaan}`;
+}
+
+export interface DuplicateSuratMatch {
+  row: TrackedSuratRow;
+  matchedBy: 'id' | 'fingerprint' | 'both';
+}
+
+export function findDuplicateTrackedRow(
+  surat: SuratTugasData,
+  rows: TrackedSuratRow[]
+): DuplicateSuratMatch | null {
+  const targetId = (surat.id || '').trim();
+  const targetFp = generateSuratFingerprint(surat);
+
+  for (const row of rows) {
+    const idMatch = Boolean(targetId && row.idSurat.trim() === targetId);
+    const fpMatch = getTrackedRowFingerprint(row) === targetFp;
+    if (idMatch || fpMatch) {
+      return {
+        row,
+        matchedBy: idMatch && fpMatch ? 'both' : idMatch ? 'id' : 'fingerprint',
+      };
+    }
+  }
+  return null;
+}
+
 export async function findOrCreateTrackingSpreadsheet(
   accessToken: string,
   initialYear: string
@@ -142,7 +234,7 @@ export async function findOrCreateTrackingSpreadsheet(
       body: JSON.stringify({
         properties: {
           title: TRACKING_SPREADSHEET_TITLE,
-          locale: 'id_ID',
+          locale: getValidSheetLocale(),
         },
         sheets: [
           {

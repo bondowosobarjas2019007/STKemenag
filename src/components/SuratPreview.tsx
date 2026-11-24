@@ -46,10 +46,10 @@ function SignatureBlock({
   namaPenandatangan: string;
 }) {
   return (
-    <div className="ml-[58%] mt-6 text-[10.5pt] leading-[1.35] text-black">
+    <div className="ml-[58%] mt-6 text-left text-[10.5pt] leading-[1.35] text-black">
       <div>Jember, {tanggalDisplay}</div>
       <div>{jabatanPenandatangan || 'Kepala Kantor'}</div>
-      <div className="h-[58px] flex items-center">
+      <div className="min-h-[84px] py-2 flex items-center">
         {modeSrikandi ? (
           <span className="text-black">${'{ttd_pengirim}'}</span>
         ) : null}
@@ -208,7 +208,7 @@ export const SuratPreview: React.FC<SuratPreviewProps> = ({
           <div className="surat-a4 shadow-[0_6px_28px_rgba(15,23,42,0.12)] border border-slate-300/80 mb-6 print:mb-0">
         <div>
           {/* KOP SURAT RESMI KEMENAG JEMBER */}
-          <div className="flex items-center gap-3 pb-2 border-b-[1.5px] border-black">
+          <div className="flex items-center gap-3 pb-2 border-b-[3px] border-double border-black">
             <div className="w-[74px] shrink-0 flex items-center justify-center">
               <img
                 src="/assets/kemenag-logo.png"

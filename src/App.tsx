@@ -28,6 +28,7 @@ import { ArsipManager } from './components/ArsipManager';
 import {
   ConfirmDocxExportModal,
   ConfirmSheetsOverwriteModal,
+  DuplicateSuratWarningModal,
   SheetsAuthPromptModal,
 } from './components/ConfirmSheetsActionModal';
 import {
@@ -57,13 +58,16 @@ import {
 import {
   appendSuratToYearSheet,
   checkExistingRecordRow,
+  DuplicateSuratMatch,
   ensureBridgeYearSheet,
   ensureYearSheet,
   extractSpreadsheetId,
   fetchBridgeYearRows,
   fetchRowsForSheet,
   fetchSheetsBridgeStatus,
+  findDuplicateTrackedRow,
   findOrCreateTrackingSpreadsheet,
+  generateSuratFingerprint,
   getSpreadsheetMetadata,
   getTargetYearForSurat,
   isOwnerAccount,
@@ -224,6 +228,21 @@ export default function App() {
   const [isProcessingDocxConfirm, setIsProcessingDocxConfirm] =
     useState<boolean>(false);
   const [docxConfirmError, setDocxConfirmError] = useState<string | null>(null);
+  const [copiedSourceRef, setCopiedSourceRef] = useState<{
+    sourceId: string;
+    fingerprint: string;
+  } | null>(null);
+  const [duplicateWarning, setDuplicateWarning] = useState<{
+    draft: SuratTugasData;
+    targetYear: string;
+    match: DuplicateSuratMatch;
+    spreadsheetId: string;
+    viaBridge: boolean;
+  } | null>(null);
+  const [duplicateBusyAction, setDuplicateBusyAction] = useState<
+    'download_only' | 'overwrite' | 'save_new' | null
+  >(null);
+  const [duplicateError, setDuplicateError] = useState<string | null>(null);
 
   const {
     viewportMode,
@@ -258,6 +277,21 @@ export default function App() {
   useEffect(() => {
     setMobileMenuOpen(false);
   }, [activeTab, isMobileLayout]);
+
+  useEffect(() => {
+    if (!copiedSourceRef) return;
+    if (surat.id !== copiedSourceRef.sourceId) {
+      setCopiedSourceRef(null);
+      return;
+    }
+    if (generateSuratFingerprint(surat) !== copiedSourceRef.fingerprint) {
+      const nextId = `draft-${Date.now()}`;
+      setCopiedSourceRef(null);
+      setSurat((prev) =>
+        prev.id === copiedSourceRef.sourceId ? { ...prev, id: nextId } : prev
+      );
+    }
+  }, [surat, copiedSourceRef]);
 
   useEffect(() => {
     if (!roleMenuOpen && !mobileMenuOpen) return;
@@ -1259,15 +1293,34 @@ export default function App() {
     const canUseOwnerDirect = Boolean(token) && isOwnerAccount(googleUser?.email);
 
     try {
-      // Langkah A: Catat otomatis ke Google Sheets (Upsert berdasarkan ID Surat)
+      // Langkah A: Cek data existing di tab tahun berjalan untuk pencegahan duplikasi
       if (bridgeConnected) {
+        const bridgeRes = await fetchBridgeYearRows(targetYear, customBridgeHeader);
+        setSpreadsheet(bridgeRes.summary);
+        setSelectedYear(targetYear);
+        setSheetRows(bridgeRes.rows);
+
+        const match = findDuplicateTrackedRow(finalSurat, bridgeRes.rows);
+        if (match) {
+          setDocxConfirmOpen(false);
+          setDocxConfirmError(null);
+          setDuplicateError(null);
+          setDuplicateWarning({
+            draft: finalSurat,
+            targetYear,
+            match,
+            spreadsheetId: bridgeRes.summary.spreadsheetId,
+            viaBridge: true,
+          });
+          return;
+        }
+
         await upsertSuratViaBridge(
           targetYear,
           finalSurat,
-          true,
+          false,
           customBridgeHeader
         );
-        setSelectedYear(targetYear);
         void loadBridgeYearData(targetYear, customBridgeHeader);
       } else if (canUseOwnerDirect && token) {
         const summary = await ensureConnectedSpreadsheet(token, targetYear);
@@ -1279,31 +1332,42 @@ export default function App() {
         setSpreadsheet(ensuredSummary);
         setSelectedYear(targetYear);
 
-        const { existingRowNumber, nextRowNumberDisplay } =
-          await checkExistingRecordRow(
-            ensuredSummary.spreadsheetId,
-            targetYear,
-            finalSurat.id,
-            token
-          );
+        const existingRows = await fetchRowsForSheet(
+          ensuredSummary.spreadsheetId,
+          targetYear,
+          token
+        );
+        setSheetRows(existingRows);
 
-        if (existingRowNumber !== null) {
-          await updateExistingSuratRow(
-            ensuredSummary.spreadsheetId,
+        const match = findDuplicateTrackedRow(finalSurat, existingRows);
+        if (match) {
+          setDocxConfirmOpen(false);
+          setDocxConfirmError(null);
+          setDuplicateError(null);
+          setDuplicateWarning({
+            draft: finalSurat,
             targetYear,
-            existingRowNumber,
-            finalSurat,
-            token
-          );
-        } else {
-          await appendSuratToYearSheet(
-            ensuredSummary.spreadsheetId,
-            targetYear,
-            nextRowNumberDisplay,
-            finalSurat,
-            token
-          );
+            match,
+            spreadsheetId: ensuredSummary.spreadsheetId,
+            viaBridge: false,
+          });
+          return;
         }
+
+        const { nextRowNumberDisplay } = await checkExistingRecordRow(
+          ensuredSummary.spreadsheetId,
+          targetYear,
+          finalSurat.id,
+          token
+        );
+
+        await appendSuratToYearSheet(
+          ensuredSummary.spreadsheetId,
+          targetYear,
+          nextRowNumberDisplay,
+          finalSurat,
+          token
+        );
 
         const refreshed = await fetchRowsForSheet(
           ensuredSummary.spreadsheetId,
@@ -1318,6 +1382,7 @@ export default function App() {
       }
 
       // Perbarui status lokal & form aktif menjadi Tercatat
+      setCopiedSourceRef(null);
       setSurat(finalSurat);
       setLastSyncedSignature(computeSuratSignature(finalSurat));
       upsertLocalDraftEntry(finalSurat, 'Tercatat');
@@ -1364,6 +1429,186 @@ export default function App() {
     } finally {
       setIsExportingDocx(false);
       setIsProcessingDocxConfirm(false);
+    }
+  };
+
+  const handleDuplicateDownloadOnly = async () => {
+    if (!duplicateWarning || duplicateBusyAction) return;
+    setDuplicateBusyAction('download_only');
+    setDuplicateError(null);
+    setIsExportingDocx(true);
+    try {
+      await exportSuratTugasDocx(duplicateWarning.draft);
+      setDuplicateWarning(null);
+      showToast('File .docx diunduh (tanpa mencatat ulang ke Google Sheets)');
+    } catch (err) {
+      setDuplicateError(
+        err instanceof Error ? err.message : 'Gagal mengekspor file .docx.'
+      );
+    } finally {
+      setIsExportingDocx(false);
+      setDuplicateBusyAction(null);
+    }
+  };
+
+  const handleDuplicateOverwriteOld = async () => {
+    if (!duplicateWarning || duplicateBusyAction) return;
+    const { draft, targetYear, match, spreadsheetId, viaBridge } =
+      duplicateWarning;
+    setDuplicateBusyAction('overwrite');
+    setDuplicateError(null);
+
+    const updatedDraft: SuratTugasData = {
+      ...draft,
+      id: match.row.idSurat.trim() || draft.id,
+      statusSurat: 'Tercatat / Final',
+      pegawaiList: draft.pegawaiList.map((p) => ({ ...p })),
+    };
+
+    try {
+      if (viaBridge) {
+        await upsertSuratViaBridge(
+          targetYear,
+          updatedDraft,
+          true,
+          customBridgeHeader
+        );
+        await loadBridgeYearData(targetYear, customBridgeHeader);
+      } else {
+        const token = getAccessToken();
+        if (!token || !isOwnerAccount(googleUser?.email)) {
+          clearAccessToken();
+          setNeedsAuth(true);
+          throw new Error(
+            'Sesi admin Google berakhir. Silakan masuk ulang untuk menimpa baris.'
+          );
+        }
+        await updateExistingSuratRow(
+          spreadsheetId,
+          targetYear,
+          match.row.rowNumber,
+          updatedDraft,
+          token
+        );
+        const refreshed = await fetchRowsForSheet(
+          spreadsheetId,
+          targetYear,
+          token
+        );
+        setSheetRows(refreshed);
+      }
+
+      setCopiedSourceRef(null);
+      setSurat(updatedDraft);
+      setLastSyncedSignature(computeSuratSignature(updatedDraft));
+      upsertLocalDraftEntry(updatedDraft, 'Tercatat');
+
+      setIsExportingDocx(true);
+      try {
+        await exportSuratTugasDocx(updatedDraft);
+      } finally {
+        setIsExportingDocx(false);
+      }
+
+      setDuplicateWarning(null);
+      showToast(
+        `Baris ${match.row.rowNumber} (Sheet ${targetYear}) diperbarui & .docx diunduh`
+      );
+    } catch (err) {
+      if (err instanceof SheetsAuthError) {
+        clearAccessToken();
+        setNeedsAuth(true);
+      }
+      setDuplicateError(
+        err instanceof Error
+          ? err.message
+          : 'Gagal memperbarui data lama di Google Sheets.'
+      );
+    } finally {
+      setDuplicateBusyAction(null);
+    }
+  };
+
+  const handleDuplicateSaveAsNew = async () => {
+    if (!duplicateWarning || duplicateBusyAction) return;
+    const { draft, targetYear, spreadsheetId, viaBridge } = duplicateWarning;
+    setDuplicateBusyAction('save_new');
+    setDuplicateError(null);
+
+    const newDraft: SuratTugasData = {
+      ...draft,
+      id: `draft-${Date.now()}`,
+      statusSurat: 'Tercatat / Final',
+      pegawaiList: draft.pegawaiList.map((p) => ({ ...p })),
+    };
+
+    try {
+      if (viaBridge) {
+        await upsertSuratViaBridge(
+          targetYear,
+          newDraft,
+          false,
+          customBridgeHeader
+        );
+        await loadBridgeYearData(targetYear, customBridgeHeader);
+      } else {
+        const token = getAccessToken();
+        if (!token || !isOwnerAccount(googleUser?.email)) {
+          clearAccessToken();
+          setNeedsAuth(true);
+          throw new Error(
+            'Sesi admin Google berakhir. Silakan masuk ulang untuk menyimpan data baru.'
+          );
+        }
+        const { nextRowNumberDisplay } = await checkExistingRecordRow(
+          spreadsheetId,
+          targetYear,
+          newDraft.id,
+          token
+        );
+        await appendSuratToYearSheet(
+          spreadsheetId,
+          targetYear,
+          nextRowNumberDisplay,
+          newDraft,
+          token
+        );
+        const refreshed = await fetchRowsForSheet(
+          spreadsheetId,
+          targetYear,
+          token
+        );
+        setSheetRows(refreshed);
+      }
+
+      setCopiedSourceRef(null);
+      setSurat(newDraft);
+      setLastSyncedSignature(computeSuratSignature(newDraft));
+      upsertLocalDraftEntry(newDraft, 'Tercatat');
+
+      setIsExportingDocx(true);
+      try {
+        await exportSuratTugasDocx(newDraft);
+      } finally {
+        setIsExportingDocx(false);
+      }
+
+      setDuplicateWarning(null);
+      showToast(
+        `Surat dicatat sebagai data baru di Sheet ${targetYear} & .docx diunduh`
+      );
+    } catch (err) {
+      if (err instanceof SheetsAuthError) {
+        clearAccessToken();
+        setNeedsAuth(true);
+      }
+      setDuplicateError(
+        err instanceof Error
+          ? err.message
+          : 'Gagal menyimpan surat sebagai data baru ke Google Sheets.'
+      );
+    } finally {
+      setDuplicateBusyAction(null);
     }
   };
 
@@ -2093,18 +2338,25 @@ export default function App() {
               }
             }}
             onLoadTrackedDraft={(draft, asTemplateCopy) => {
-              setSurat({
+              const loadedDraft: SuratTugasData = {
                 ...draft,
-                id: asTemplateCopy ? `draft-${Date.now()}` : draft.id,
                 pegawaiList: draft.pegawaiList.map((p) => ({ ...p })),
-              });
-              if (!asTemplateCopy) {
-                setLastSyncedSignature(computeSuratSignature(draft));
+              };
+              setSurat(loadedDraft);
+              if (asTemplateCopy) {
+                setCopiedSourceRef({
+                  sourceId: loadedDraft.id,
+                  fingerprint: generateSuratFingerprint(loadedDraft),
+                });
+                setLastSyncedSignature('');
+              } else {
+                setCopiedSourceRef(null);
+                setLastSyncedSignature(computeSuratSignature(loadedDraft));
               }
               setActiveTab('editor');
               showToast(
                 asTemplateCopy
-                  ? 'Salinan Surat Tugas dimuat ke editor sebagai draft baru'
+                  ? 'Salinan Surat Tugas dimuat ke editor (referensi asal dipertahankan hingga data inti diubah)'
                   : 'Data Surat Tugas dari Google Sheets dimuat ke editor'
               );
             }}
@@ -2117,6 +2369,7 @@ export default function App() {
           <ArsipManager
             arsipList={arsipList}
             onLoadArsip={(item) => {
+              setCopiedSourceRef(null);
               setSurat({
                 ...item.data,
                 pegawaiList: item.data.pegawaiList.map((p) => ({ ...p })),
@@ -2997,6 +3250,30 @@ export default function App() {
           if (isProcessingDocxConfirm) return;
           setDocxConfirmOpen(false);
           setDocxConfirmError(null);
+        }}
+      />
+
+      {/* PERINGATAN DUPLIKASI SURAT TUGAS DI WORKSHEET */}
+      <DuplicateSuratWarningModal
+        isOpen={duplicateWarning !== null}
+        waktuInputSebelumnya={duplicateWarning?.match.row.waktuInput || ''}
+        rowNumber={duplicateWarning?.match.row.rowNumber || 0}
+        targetYear={duplicateWarning?.targetYear || ''}
+        namaKegiatan={
+          duplicateWarning?.draft.namaKegiatan ||
+          duplicateWarning?.match.row.namaKegiatan ||
+          ''
+        }
+        matchedBy={duplicateWarning?.match.matchedBy || 'fingerprint'}
+        busyAction={duplicateBusyAction}
+        errorMessage={duplicateError}
+        onDownloadOnly={() => void handleDuplicateDownloadOnly()}
+        onOverwriteOld={() => void handleDuplicateOverwriteOld()}
+        onSaveAsNew={() => void handleDuplicateSaveAsNew()}
+        onCancel={() => {
+          if (duplicateBusyAction) return;
+          setDuplicateWarning(null);
+          setDuplicateError(null);
         }}
       />
       </div>
