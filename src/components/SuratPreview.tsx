@@ -174,12 +174,19 @@ export const SuratPreview: React.FC<SuratPreviewProps> = ({
     fitToContainer && stageWidth > 0
       ? Math.max(0.28, stageWidth / A4_WIDTH_PX)
       : zoom;
-  const effectiveScale = fitToContainer ? Math.min(zoom, maxFitScale) : zoom;
-  const isAutoScaled = effectiveScale < zoom - 0.01;
+  const effectiveScale = fitToContainer
+    ? maxFitScale < 1
+      ? zoom * maxFitScale
+      : Math.min(zoom, maxFitScale)
+    : zoom;
+  const isAutoScaled = fitToContainer && maxFitScale < 1;
 
   const outerBoxStyle: React.CSSProperties = {
-    width: `${Math.round(A4_WIDTH_PX * effectiveScale)}px`,
-    height: paperHeight > 0 ? `${Math.round(paperHeight * effectiveScale)}px` : undefined,
+    width:
+      stageWidth > 0 ? `${Math.round(A4_WIDTH_PX * effectiveScale)}px` : '100%',
+    maxWidth: '100%',
+    height:
+      paperHeight > 0 ? `${Math.round(paperHeight * effectiveScale)}px` : undefined,
   };
 
   const scaleWrapperStyle: React.CSSProperties = {
@@ -191,7 +198,7 @@ export const SuratPreview: React.FC<SuratPreviewProps> = ({
   return (
     <div
       ref={stageRef}
-      className="w-full flex flex-col items-center print-only-container"
+      className="w-full max-w-full flex flex-col items-center print-only-container"
     >
       {isAutoScaled && (
         <div className="no-print mb-2 text-[11px] font-mono-tabular st-text-muted text-center">

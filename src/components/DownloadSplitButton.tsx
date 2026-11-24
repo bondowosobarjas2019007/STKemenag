@@ -24,7 +24,7 @@ export const DownloadSplitButton: React.FC<DownloadSplitButtonProps> = ({
 
   useEffect(() => {
     if (!menuOpen) return;
-    const handlePointerDown = (event: MouseEvent) => {
+    const handlePointerDown = (event: PointerEvent) => {
       if (
         containerRef.current &&
         !containerRef.current.contains(event.target as Node)
@@ -37,10 +37,10 @@ export const DownloadSplitButton: React.FC<DownloadSplitButtonProps> = ({
         setMenuOpen(false);
       }
     };
-    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('pointerdown', handlePointerDown);
     document.addEventListener('keydown', handleKeyDown);
     return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('pointerdown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [menuOpen]);
@@ -55,7 +55,9 @@ export const DownloadSplitButton: React.FC<DownloadSplitButtonProps> = ({
   return (
     <div
       ref={containerRef}
-      className={`relative inline-flex ${fullWidth ? 'w-full' : ''}`}
+      className={`relative inline-flex overflow-visible ${
+        menuOpen ? 'z-50' : 'z-10'
+      } ${fullWidth ? 'w-full' : ''}`}
     >
       <div
         className={`inline-flex items-stretch rounded-lg shadow-xs overflow-hidden bg-[#0B5D3B] ${
@@ -69,12 +71,12 @@ export const DownloadSplitButton: React.FC<DownloadSplitButtonProps> = ({
             setMenuOpen(false);
             onExport('docx');
           }}
-          className={`min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-[#0B5D3B] hover:bg-[#09492E] disabled:opacity-60 transition-colors whitespace-nowrap ${
-            fullWidth ? 'flex-1' : ''
+          className={`min-h-[44px] inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 text-xs font-semibold text-white bg-[#0B5D3B] hover:bg-[#09492E] disabled:opacity-60 transition-colors whitespace-nowrap ${
+            fullWidth ? 'flex-1 min-w-0' : ''
           }`}
         >
           <Download className="w-3.5 h-3.5 shrink-0" />
-          <span>{primaryLabel}</span>
+          <span className="truncate">{primaryLabel}</span>
         </button>
 
         <span className="w-px bg-emerald-700/80 my-2 shrink-0" aria-hidden="true" />
@@ -101,7 +103,7 @@ export const DownloadSplitButton: React.FC<DownloadSplitButtonProps> = ({
         <div
           role="menu"
           aria-label="Pilihan format unduhan surat"
-          className={`absolute right-0 w-72 max-w-[calc(100vw-1.5rem)] st-surface border st-border rounded-xl shadow-xl p-1.5 z-50 space-y-1 ${
+          className={`absolute right-0 w-72 max-w-[calc(100vw-2rem)] st-surface border st-border rounded-xl shadow-2xl p-1.5 z-50 space-y-1 ${
             menuPlacement === 'top' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
           }`}
         >

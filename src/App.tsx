@@ -12,7 +12,6 @@ import {
   Menu,
   Monitor,
   Plus,
-  Printer,
   RotateCcw,
   Save,
   ShieldCheck,
@@ -1380,31 +1379,6 @@ export default function App() {
     showToast('Surat berhasil disimpan ke Draft');
   };
 
-  const handlePrintPdf = () => {
-    if (!isSuratReadyForTracking(surat)) {
-      showToast(
-        'Lengkapi isi Surat Tugas (kegiatan/dasar & pegawai) terlebih dahulu sebelum mencetak'
-      );
-      return;
-    }
-    const finalSurat: SuratTugasData = {
-      ...surat,
-      statusSurat: 'Tercatat / Final',
-      pegawaiList: surat.pegawaiList.map((p) => ({ ...p })),
-    };
-    const finalSig = computeSuratSignature(finalSurat);
-    if (lastSyncedSigRef.current !== finalSig) {
-      setSurat(finalSurat);
-      initialSigRef.current = finalSig;
-      upsertLocalDraftEntry(finalSurat, 'Tercatat');
-      void performBackgroundUpsert(finalSurat, {
-        silent: true,
-        markTercatat: true,
-      });
-    }
-    window.print();
-  };
-
   // Trigger 1: Export .docx or .pdf immediately + silent concurrent upsert to Google Sheets
   const handleExportSurat = async (format: ExportFormat) => {
     if (exportingFormat !== null) return;
@@ -1693,8 +1667,8 @@ export default function App() {
       >
         {isMobileLayout ? (
           <>
-            <header className="no-print sticky top-0 z-30 st-surface border-b">
-              <div className="px-2.5 py-1.5 flex items-center justify-between gap-1.5">
+            <header className="no-print sticky top-0 z-30 st-surface border-b overflow-visible">
+              <div className="px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5 min-w-0 flex-1">
                   <button
                     type="button"
@@ -1722,7 +1696,7 @@ export default function App() {
                   </a>
                 </div>
 
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex flex-wrap items-center justify-end gap-1.5 min-w-0">
                   <ThemeSwitcher themeMode={themeMode} onChange={setThemeMode} />
 
                   <button
@@ -1953,24 +1927,13 @@ export default function App() {
                       }
                     />
                   )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMobileMenuOpen(false);
-                      handlePrintPdf();
-                    }}
-                    className="w-full min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E]"
-                  >
-                    <Printer className="w-4 h-4" />
-                    Cetak / PDF
-                  </button>
                 </div>
               </div>
             )}
           </>
         ) : (
           /* TOP BAR CONTRACT: 3 zones on desktop/tablet */
-          <header className="no-print sticky top-0 z-30 st-surface border-b px-3 sm:px-6 py-2 xl:py-0 xl:h-14 flex flex-wrap xl:flex-nowrap items-center justify-between gap-x-3 gap-y-1.5 xl:gap-4">
+          <header className="no-print sticky top-0 z-30 st-surface border-b px-3 sm:px-6 py-2 xl:py-0 xl:h-14 flex flex-wrap xl:flex-nowrap items-center justify-between gap-2 xl:gap-4 overflow-visible">
             <a
               href="#editor"
               onClick={(e) => {
@@ -2032,7 +1995,7 @@ export default function App() {
               </button>
             </nav>
 
-            <div className="order-2 xl:order-3 flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <div className="order-2 xl:order-3 flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 min-w-0">
               {renderSyncStatusPill()}
 
               <ThemeSwitcher themeMode={themeMode} onChange={setThemeMode} />
@@ -2154,15 +2117,6 @@ export default function App() {
                   </div>
                 )}
               </div>
-
-              <button
-                type="button"
-                onClick={handlePrintPdf}
-                className="inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 text-xs font-semibold text-white bg-[#0B5D3B] rounded-lg hover:bg-[#09492E] transition-colors whitespace-nowrap shrink-0"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Cetak / PDF</span>
-              </button>
             </div>
           </header>
         )}
@@ -2957,7 +2911,7 @@ export default function App() {
 
             {/* EDITOR ACTION FOOTER */}
             <div
-              className={`pt-3 border-t st-border ${
+              className={`relative z-20 overflow-visible pt-3 border-t st-border ${
                 isMobileLayout
                   ? 'grid grid-cols-2 gap-2.5'
                   : 'flex flex-wrap items-center justify-between gap-2.5'
@@ -2966,7 +2920,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={handleSaveToDraft}
-                className="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold st-text-primary st-surface border rounded-lg hover:bg-slate-50 night:hover:bg-[#efe3c4] dark:hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0"
+                className="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold st-text-primary st-surface border rounded-lg hover:bg-slate-50 night:hover:bg-[#efe3c4] dark:hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0"
               >
                 <Save className="w-3.5 h-3.5 text-[#0B5D3B] dark:text-emerald-400" />
                 Simpan ke Draft
@@ -2988,97 +2942,125 @@ export default function App() {
             !isMobileLayout
               ? 'lg:h-[calc(100vh-3.5rem)] flex'
               : mobilePane === 'preview'
-                ? 'flex flex-1'
+                ? 'flex flex-1 min-w-0'
                 : 'hidden'
           }`}
         >
           {/* WORKSPACE TOOLBAR */}
           <div
-            className={`no-print st-surface backdrop-blur-xs border-b flex flex-wrap items-center justify-between gap-2.5 ${
-              isMobileLayout ? 'px-3 py-2.5' : 'px-5 py-2.5'
+            className={`no-print relative z-30 overflow-visible st-surface border-b ${
+              isMobileLayout
+                ? 'px-3 py-2.5 flex flex-col gap-2 w-full'
+                : 'px-5 py-2.5 flex flex-wrap items-center justify-between gap-2.5'
             }`}
           >
-            <div className="flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-w-full">
-              <span className="text-xs font-medium st-text-muted whitespace-nowrap shrink-0">
+            <div
+              className={
+                isMobileLayout
+                  ? 'w-full space-y-1'
+                  : 'flex flex-wrap items-center gap-1.5 max-w-full'
+              }
+            >
+              <span className="block text-[11px] sm:text-xs font-medium st-text-muted whitespace-nowrap shrink-0">
                 Muat Contoh:
               </span>
-              <button
-                type="button"
-                onClick={() => handleLoadSample('sendiri')}
-                className="min-h-[38px] px-2.5 py-1.5 text-xs font-medium st-text-secondary st-surface-muted hover:opacity-90 rounded-md transition-colors whitespace-nowrap shrink-0"
+              <div
+                className={
+                  isMobileLayout
+                    ? 'grid grid-cols-3 gap-1.5 w-full'
+                    : 'flex flex-wrap items-center gap-1.5'
+                }
               >
-                1 Orang
-              </button>
-              <button
-                type="button"
-                onClick={() => handleLoadSample('tiga_orang')}
-                className="min-h-[38px] px-2.5 py-1.5 text-xs font-medium st-text-secondary st-surface-muted hover:opacity-90 rounded-md transition-colors whitespace-nowrap shrink-0"
-              >
-                2-3 Orang
-              </button>
-              <button
-                type="button"
-                onClick={() => handleLoadSample('terlampir')}
-                className="min-h-[38px] px-2.5 py-1.5 text-xs font-medium st-text-secondary st-surface-muted hover:opacity-90 rounded-md transition-colors whitespace-nowrap shrink-0"
-              >
-                &gt; 3 Terlampir
-              </button>
+                <button
+                  type="button"
+                  onClick={() => handleLoadSample('sendiri')}
+                  className="min-h-[38px] px-2 sm:px-2.5 py-1.5 text-xs font-medium st-text-secondary st-surface-muted hover:opacity-90 rounded-md transition-colors whitespace-nowrap text-center"
+                >
+                  1 Orang
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleLoadSample('tiga_orang')}
+                  className="min-h-[38px] px-2 sm:px-2.5 py-1.5 text-xs font-medium st-text-secondary st-surface-muted hover:opacity-90 rounded-md transition-colors whitespace-nowrap text-center"
+                >
+                  2-3 Orang
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleLoadSample('terlampir')}
+                  className="min-h-[38px] px-2 sm:px-2.5 py-1.5 text-xs font-medium st-text-secondary st-surface-muted hover:opacity-90 rounded-md transition-colors whitespace-nowrap text-center"
+                >
+                  &gt; 3 Terlampir
+                </button>
+              </div>
             </div>
 
             <div
               className={
                 isMobileLayout
-                  ? 'grid grid-cols-2 gap-2 w-full'
-                  : 'flex flex-wrap items-center gap-2'
+                  ? 'flex flex-col gap-2 w-full overflow-visible'
+                  : 'flex flex-wrap items-center gap-2 overflow-visible'
               }
             >
-              {!isMobileLayout && (
-                <div className="hidden sm:flex items-center gap-1 p-0.5 st-surface-muted rounded-md border">
-                  {[0.7, 0.85, 1].map((z) => (
-                    <button
-                      key={z}
-                      type="button"
-                      onClick={() => setZoom(z)}
-                      className={`px-2 py-1 text-xs font-mono-tabular rounded transition-colors ${
-                        zoom === z
-                          ? 'st-surface st-text-primary shadow-xs font-medium'
-                          : 'st-text-muted hover:text-slate-900 night:hover:text-[#3b3228] dark:hover:text-slate-100'
-                      }`}
-                    >
-                      {Math.round(z * 100)}%
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={handleSaveToDraft}
-                className="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium st-text-primary st-surface border rounded-lg hover:bg-slate-50 night:hover:bg-[#efe3c4] dark:hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0"
+              <div
+                className={
+                  isMobileLayout
+                    ? 'grid grid-cols-3 gap-1 w-full p-0.5 st-surface-muted rounded-lg border'
+                    : 'flex items-center gap-1 p-0.5 st-surface-muted rounded-md border'
+                }
               >
-                <Save className="w-3.5 h-3.5 text-[#0B5D3B] dark:text-emerald-400" />
-                Simpan ke Draft
-              </button>
+                {[0.7, 0.85, 1].map((z) => (
+                  <button
+                    key={z}
+                    type="button"
+                    onClick={() => setZoom(z)}
+                    className={`min-h-[34px] sm:min-h-0 px-2 py-1 text-xs font-mono-tabular rounded transition-colors text-center ${
+                      zoom === z
+                        ? 'st-surface st-text-primary shadow-xs font-medium'
+                        : 'st-text-muted hover:text-slate-900 night:hover:text-[#3b3228] dark:hover:text-slate-100'
+                    }`}
+                  >
+                    {Math.round(z * 100)}%
+                  </button>
+                ))}
+              </div>
 
-              <DownloadSplitButton
-                exportingFormat={exportingFormat}
-                modeSrikandi={surat.modeSrikandi}
-                menuPlacement="bottom"
-                fullWidth={isMobileLayout}
-                onExport={(format) => void handleExportSurat(format)}
-              />
+              <div
+                className={
+                  isMobileLayout
+                    ? 'grid grid-cols-2 gap-2 w-full overflow-visible'
+                    : 'flex flex-wrap items-center gap-2 overflow-visible'
+                }
+              >
+                <button
+                  type="button"
+                  onClick={handleSaveToDraft}
+                  className="min-h-[44px] w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-medium st-text-primary st-surface border rounded-lg hover:bg-slate-50 night:hover:bg-[#efe3c4] dark:hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0"
+                >
+                  <Save className="w-3.5 h-3.5 text-[#0B5D3B] dark:text-emerald-400 shrink-0" />
+                  <span className="truncate">Simpan ke Draft</span>
+                </button>
+
+                <DownloadSplitButton
+                  exportingFormat={exportingFormat}
+                  modeSrikandi={surat.modeSrikandi}
+                  menuPlacement="bottom"
+                  fullWidth={isMobileLayout}
+                  onExport={(format) => void handleExportSurat(format)}
+                />
+              </div>
             </div>
           </div>
 
           {/* A4 DOCUMENT VIEWPORT */}
           <div
-            className={`flex-1 overflow-auto ${
+            className={`relative z-0 flex-1 overflow-auto ${
               isMobileLayout ? 'p-2.5 sm:p-3' : 'p-6 sm:p-8'
             } flex justify-center items-start print-only-container`}
           >
             <SuratPreview
               data={surat}
-              zoom={isMobileLayout ? 1 : zoom}
+              zoom={zoom}
               fitToContainer
             />
           </div>
